@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="hi">
+<head>
+  <meta charset="UTF-8" />
+  <title>बुकमार्क</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: "Segoe UI", system-ui, sans-serif;
+      background: #1b1d23;
+      color: #e8eaf0;
+      padding: 32px 24px;
+      max-width: 860px;
+      margin: 0 auto;
+    }
+    h1 { font-size: 22px; margin-bottom: 20px; }
+    .row {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 10px 14px;
+      border-radius: 8px;
+      cursor: pointer;
+    }
+    .row:hover { background: #262a33; }
+    .row .t {
+      flex: 1;
+      overflow: hidden;
+      white-space: nowrap;
+      text-overflow: ellipsis;
+      font-size: 14px;
+    }
+    .row .u {
+      color: #8a90a0;
+      font-size: 12px;
+      max-width: 40%;
+      overflow: hidden;
+      white-space: nowrap;
+      text-overflow: ellipsis;
+    }
+    .row button {
+      border: none;
+      background: transparent;
+      color: #9aa0ad;
+      font-size: 14px;
+      cursor: pointer;
+      padding: 4px 8px;
+      border-radius: 6px;
+    }
+    .row button:hover { background: #3a2d2d; color: #ff9d8f; }
+    .empty { color: #8a90a0; padding: 40px 0; text-align: center; }
+  </style>
+</head>
+<body>
+  <h1>⭐ बुकमार्क</h1>
+  <div id="list"></div>
+  <script>
+    async function refresh() {
+      const items = (await window.tez.list('bookmarks')) || [];
+      const list = document.getElementById('list');
+      list.innerHTML = '';
+      if (!items.length) {
+        list.innerHTML = '<div class="empty">अभी कोई बुकमार्क नहीं — किसी साइट पर ☆ बटन दबाएँ</div>';
+        return;
+      }
+      for (const b of items) {
+        const row = document.createElement('div');
+        row.className = 'row';
+        const t = document.createElement('span');
+        t.className = 't';
+        t.textContent = b.title;
+        const u = document.createElement('span');
+        u.className = 'u';
+        u.textContent = b.url;
+        const del = document.createElement('button');
+        del.textContent = '✕';
+        del.title = 'हटाएँ';
+        del.addEventListener('click', async (e) => {
+          e.stopPropagation();
+          await window.tez.action('bookmarks', 'remove', b.url);
+          refresh();
+        });
+        row.addEventListener('click', () => window.tez.action('open', 'open', b.url));
+        row.append(t, u, del);
+        list.appendChild(row);
+      }
+    }
+    refresh();
+  </script>
+</body>
+</html>

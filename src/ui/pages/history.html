@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="hi">
+<head>
+  <meta charset="UTF-8" />
+  <title>हिस्ट्री</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: "Segoe UI", system-ui, sans-serif;
+      background: #1b1d23;
+      color: #e8eaf0;
+      padding: 32px 24px;
+      max-width: 860px;
+      margin: 0 auto;
+    }
+    h1 { font-size: 22px; margin-bottom: 16px; display: flex; align-items: center; gap: 16px; }
+    #clear {
+      margin-left: auto;
+      border: none;
+      background: #3a2d2d;
+      color: #ff9d8f;
+      font-size: 12px;
+      padding: 6px 12px;
+      border-radius: 8px;
+      cursor: pointer;
+    }
+    #search {
+      width: 100%;
+      height: 36px;
+      padding: 0 14px;
+      margin-bottom: 16px;
+      border: 1px solid #3d424e;
+      border-radius: 18px;
+      background: #14161a;
+      color: #e8eaf0;
+      font-size: 13px;
+      outline: none;
+    }
+    .row {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 8px 14px;
+      border-radius: 8px;
+      cursor: pointer;
+    }
+    .row:hover { background: #262a33; }
+    .row .time { color: #6d7484; font-size: 11px; width: 110px; flex-shrink: 0; }
+    .row .t { flex: 1; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-size: 13px; }
+    .row .u { color: #8a90a0; font-size: 11px; max-width: 35%; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+    .row button { border: none; background: transparent; color: #9aa0ad; cursor: pointer; padding: 2px 8px; border-radius: 6px; }
+    .row button:hover { background: #3a2d2d; color: #ff9d8f; }
+    .empty { color: #8a90a0; padding: 40px 0; text-align: center; }
+  </style>
+</head>
+<body>
+  <h1>🕘 हिस्ट्री <button id="clear">पूरी हिस्ट्री मिटाएँ</button></h1>
+  <input id="search" type="text" placeholder="हिस्ट्री में खोजें…" />
+  <div id="list"></div>
+  <script>
+    let all = [];
+    function fmt(ts) {
+      const d = new Date(ts);
+      return d.toLocaleDateString('hi-IN', { day: 'numeric', month: 'short' }) +
+        ' ' + d.toLocaleTimeString('hi-IN', { hour: '2-digit', minute: '2-digit' });
+    }
+    function render() {
+      const q = document.getElementById('search').value.trim().toLowerCase();
+      const items = q
+        ? all.filter((h) => (h.title || '').toLowerCase().includes(q) || h.url.toLowerCase().includes(q))
+        : all;
+      const list = document.getElementById('list');
+      list.innerHTML = '';
+      if (!items.length) {
+        list.innerHTML = '<div class="empty">कुछ नहीं मिला</div>';
+        return;
+      }
+      for (const h of items.slice(0, 500)) {
+        const row = document.createElement('div');
+        row.className = 'row';
+        const time = document.createElement('span');
+        time.className = 'time';
+        time.textContent = fmt(h.ts);
+        const t = document.createElement('span');
+        t.className = 't';
+        t.textContent = h.title || h.url;
+        const u = document.createElement('span');
+        u.className = 'u';
+        u.textContent = h.url;
+        const del = document.createElement('button');
+        del.textContent = '✕';
+        del.addEventListener('click', async (e) => {
+          e.stopPropagation();
+          await window.tez.action('history', 'remove', { url: h.url, ts: h.ts });
+          refresh();
+        });
+        row.addEventListener('click', () => window.tez.action('open', 'open', h.url));
+        row.append(time, t, u, del);
+        list.appendChild(row);
+      }
+    }
+    async function refresh() {
+      all = (await window.tez.list('history')) || [];
+      render();
+    }
+    document.getElementById('search').addEventListener('input', render);
+    document.getElementById('clear').addEventListener('click', async () => {
+      if (confirm('पूरी हिस्ट्री मिटा दें?')) {
+        await window.tez.action('history', 'clear');
+        refresh();
+      }
+    });
+    refresh();
+  </script>
+</body>
+</html>

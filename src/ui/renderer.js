@@ -5,6 +5,16 @@ const forwardBtn = document.getElementById('forward');
 const reloadBtn = document.getElementById('reload');
 const blockedEl = document.getElementById('blocked');
 const keepAliveBtn = document.getElementById('keepalive');
+const starBtn = document.getElementById('star');
+const shieldBtn = document.getElementById('shield');
+const downloadsBtn = document.getElementById('downloads');
+const menuBtn = document.getElementById('menu');
+const findbar = document.getElementById('findbar');
+const findText = document.getElementById('findtext');
+const findCount = document.getElementById('findcount');
+
+const BASE_CHROME = 84;
+const FIND_CHROME = 118;
 
 let currentState = { tabs: [], activeTabId: null };
 
@@ -14,7 +24,8 @@ function render(state) {
 
   for (const tab of state.tabs) {
     const el = document.createElement('div');
-    el.className = 'tab' + (tab.id === state.activeTabId ? ' active' : '');
+    el.className =
+      'tab' + (tab.id === state.activeTabId ? ' active' : '') + (tab.isPrivate ? ' private' : '');
     el.title = tab.title;
     el.addEventListener('click', () => window.browser.activateTab(tab.id));
     el.addEventListener('auxclick', (e) => {
@@ -29,8 +40,20 @@ function render(state) {
 
     const title = document.createElement('span');
     title.className = 'title';
-    title.textContent = tab.title;
+    title.textContent = (tab.isPrivate ? '🕶 ' : '') + tab.title;
     el.appendChild(title);
+
+    if (tab.audible || tab.muted) {
+      const sound = document.createElement('span');
+      sound.className = 'sound';
+      sound.textContent = tab.muted ? '🔇' : '🔊';
+      sound.title = tab.muted ? 'आवाज़ चालू करें' : 'टैब म्यूट करें';
+      sound.addEventListener('click', (e) => {
+        e.stopPropagation();
+        window.browser.muteTab(tab.id);
+      });
+      el.appendChild(sound);
+    }
 
     const close = document.createElement('span');
     close.className = 'close';
@@ -63,8 +86,18 @@ function render(state) {
     keepAliveBtn.title = active.keepAlive
       ? 'लॉग-इन बनाए रखना चालू है (बंद करने के लिए क्लिक करें)'
       : 'ऑटो-लॉगआउट रोकें: इस साइट को लॉग-इन बनाए रखें';
+    starBtn.classList.toggle('active', !!state.activeIsBookmarked);
+    starBtn.textContent = state.activeIsBookmarked ? '★' : '☆';
+    const shieldOff = !state.adblockEnabled || state.activeWhitelisted;
+    shieldBtn.classList.toggle('off', shieldOff);
+    shieldBtn.title = !state.adblockEnabled
+      ? 'ऐड-ब्लॉकर बंद है (मेन्यू से चालू करें)'
+      : state.activeWhitelisted
+        ? 'इस साइट पर ऐड-ब्लॉकर बंद है — चालू करने के लिए क्लिक करें'
+        : 'ऐड-ब्लॉकर चालू — इस साइट पर बंद करने के लिए क्लिक करें';
     document.title = active.title + ' — TezBrowser';
   }
+  downloadsBtn.classList.toggle('busy', (state.downloadsActive || 0) > 0);
 }
 
 window.browser.onState(render);
@@ -81,12 +114,6 @@ address.addEventListener('keydown', (e) => {
   }
 });
 
-keepAliveBtn.addEventListener('click', () => {
-  if (currentState.activeTabId != null) {
-    window.browser.toggleKeepAlive(currentState.activeTabId);
-  }
-});
-
 backBtn.addEventListener('click', () => window.browser.back());
 forwardBtn.addEventListener('click', () => window.browser.forward());
 reloadBtn.addEventListener('click', () => {
@@ -94,3 +121,58 @@ reloadBtn.addEventListener('click', () => {
   if (active && active.loading) window.browser.stop();
   else window.browser.reload();
 });
+
+keepAliveBtn.addEventListener('click', () => {
+  if (currentState.activeTabId != null) {
+    window.browser.toggleKeepAlive(currentState.activeTabId);
+  }
+});
+starBtn.addEventListener('click', () => window.browser.toggleBookmark());
+shieldBtn.addEventListener('click', () => window.browser.toggleShield());
+downloadsBtn.addEventListener('click', () => window.browser.openInternal('downloads'));
+menuBtn.addEventListener('click', () => {
+  const r = menuBtn.getBoundingClientRect();
+  window.browser.openMenu(Math.round(r.left), Math.round(r.bottom + 4));
+});
+
+// ---- find in page ----
+function openFind() {
+  findbar.classList.add('open');
+  window.browser.setChromeHeight(FIND_CHROME);
+  findText.focus();
+  findText.select();
+}
+function closeFind() {
+  findbar.classList.remove('open');
+  findCount.textContent = '';
+  window.browser.findStop();
+  window.browser.setChromeHeight(BASE_CHROME);
+}
+
+window.browser.onFindOpen(openFind);
+window.browser.onFindResult(({ active, matches }) => {
+  findCount.textContent = matches ? `${active}/${matches}` : 'कोई नतीजा नहीं';
+});
+
+findText.addEventListener('input', () => {
+  const t = findText.value.trim();
+  if (t) window.browser.findStart(t);
+  else {
+    findCount.textContent = '';
+    window.browser.findStop();
+  }
+});
+findText.addEventListener('keydown', (e) => {
+  const t = findText.value.trim();
+  if (e.key === 'Enter' && t) window.browser.findNext(t, !e.shiftKey);
+  if (e.key === 'Escape') closeFind();
+});
+document.getElementById('findnext').addEventListener('click', () => {
+  const t = findText.value.trim();
+  if (t) window.browser.findNext(t, true);
+});
+document.getElementById('findprev').addEventListener('click', () => {
+  const t = findText.value.trim();
+  if (t) window.browser.findNext(t, false);
+});
+document.getElementById('findclose').addEventListener('click', closeFind);

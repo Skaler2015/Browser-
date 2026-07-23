@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="hi">
+<head>
+  <meta charset="UTF-8" />
+  <title>डाउनलोड</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: "Segoe UI", system-ui, sans-serif;
+      background: #1b1d23;
+      color: #e8eaf0;
+      padding: 32px 24px;
+      max-width: 860px;
+      margin: 0 auto;
+    }
+    h1 { font-size: 22px; margin-bottom: 20px; display: flex; align-items: center; }
+    #clear {
+      margin-left: auto;
+      border: none;
+      background: #2f333d;
+      color: #cfd3dc;
+      font-size: 12px;
+      padding: 6px 12px;
+      border-radius: 8px;
+      cursor: pointer;
+    }
+    .card {
+      background: #23262e;
+      border-radius: 10px;
+      padding: 14px 16px;
+      margin-bottom: 12px;
+    }
+    .name { font-size: 14px; margin-bottom: 6px; word-break: break-all; }
+    .meta { font-size: 12px; color: #8a90a0; margin-bottom: 8px; }
+    .bar {
+      height: 6px;
+      border-radius: 3px;
+      background: #14161a;
+      overflow: hidden;
+      margin-bottom: 10px;
+    }
+    .bar > div { height: 100%; background: #6db3ff; transition: width 0.4s; }
+    .actions { display: flex; gap: 8px; }
+    .actions button {
+      border: none;
+      background: #2f333d;
+      color: #cfd3dc;
+      font-size: 12px;
+      padding: 6px 12px;
+      border-radius: 8px;
+      cursor: pointer;
+    }
+    .actions button:hover { background: #3d424e; }
+    .empty { color: #8a90a0; padding: 40px 0; text-align: center; }
+    .state-completed { color: #8fd694; }
+    .state-cancelled, .state-interrupted { color: #ff9d8f; }
+  </style>
+</head>
+<body>
+  <h1>⬇ डाउनलोड <button id="clear">लिस्ट साफ़ करें</button></h1>
+  <div id="list"></div>
+  <script>
+    const STATE_HI = {
+      progressing: 'डाउनलोड हो रहा है…',
+      paused: 'रुका हुआ',
+      completed: 'पूरा हुआ ✔',
+      cancelled: 'रद्द',
+      interrupted: 'रुकावट आई',
+    };
+    function size(n) {
+      if (!n) return '';
+      const units = ['B', 'KB', 'MB', 'GB'];
+      let i = 0;
+      while (n >= 1024 && i < units.length - 1) { n /= 1024; i++; }
+      return n.toFixed(i ? 1 : 0) + ' ' + units[i];
+    }
+    async function act(id, action) {
+      await window.tez.action('downloads', action, id);
+      refresh();
+    }
+    async function refresh() {
+      const items = (await window.tez.list('downloads')) || [];
+      const list = document.getElementById('list');
+      list.innerHTML = '';
+      if (!items.length) {
+        list.innerHTML = '<div class="empty">कोई डाउनलोड नहीं</div>';
+        return;
+      }
+      for (const d of items) {
+        const card = document.createElement('div');
+        card.className = 'card';
+        const pct = d.total ? Math.round((d.received / d.total) * 100) : 0;
+        const name = document.createElement('div');
+        name.className = 'name';
+        name.textContent = d.filename;
+        const meta = document.createElement('div');
+        meta.className = 'meta';
+        const st = document.createElement('span');
+        st.className = 'state-' + d.state;
+        st.textContent = STATE_HI[d.state] || d.state;
+        meta.appendChild(st);
+        meta.append(
+          '  ·  ' + size(d.received) + (d.total ? ' / ' + size(d.total) + ' (' + pct + '%)' : '')
+        );
+        card.append(name, meta);
+        if (d.state === 'progressing' || d.state === 'paused') {
+          const bar = document.createElement('div');
+          bar.className = 'bar';
+          const fill = document.createElement('div');
+          fill.style.width = pct + '%';
+          bar.appendChild(fill);
+          card.appendChild(bar);
+        }
+        const actions = document.createElement('div');
+        actions.className = 'actions';
+        const btn = (label, action) => {
+          const b = document.createElement('button');
+          b.textContent = label;
+          b.addEventListener('click', () => act(d.id, action));
+          actions.appendChild(b);
+        };
+        if (d.state === 'progressing') { btn('⏸ रोकें', 'pause'); btn('✕ रद्द', 'cancel'); }
+        if (d.state === 'paused') { btn('▶ जारी रखें', 'resume'); btn('✕ रद्द', 'cancel'); }
+        if (d.state === 'completed') { btn('खोलें', 'open'); btn('फ़ोल्डर में दिखाएँ', 'show'); }
+        card.appendChild(actions);
+        list.appendChild(card);
+      }
+    }
+    document.getElementById('clear').addEventListener('click', () => act(0, 'clear'));
+    refresh();
+    setInterval(refresh, 1000);
+  </script>
+</body>
+</html>

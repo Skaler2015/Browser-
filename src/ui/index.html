@@ -28,7 +28,7 @@
     .tab {
       display: flex;
       align-items: center;
-      gap: 8px;
+      gap: 6px;
       min-width: 120px;
       max-width: 220px;
       height: 32px;
@@ -40,6 +40,8 @@
       overflow: hidden;
     }
     .tab.active { background: #2f333d; }
+    .tab.private { background: #2c2440; }
+    .tab.private.active { background: #3a2f55; }
     .tab .title {
       flex: 1;
       font-size: 12px;
@@ -47,16 +49,16 @@
       overflow: hidden;
       text-overflow: ellipsis;
     }
-    .tab .close {
+    .tab .close, .tab .sound {
       width: 18px; height: 18px;
       line-height: 18px;
       text-align: center;
       border-radius: 50%;
-      font-size: 12px;
+      font-size: 11px;
       color: #9aa0ad;
       flex-shrink: 0;
     }
-    .tab .close:hover { background: #4a4f5c; color: #fff; }
+    .tab .close:hover, .tab .sound:hover { background: #4a4f5c; color: #fff; }
     .tab .spinner {
       width: 10px; height: 10px;
       border: 2px solid #4a4f5c;
@@ -85,7 +87,7 @@
       align-items: center;
       height: 46px;
       padding: 0 10px;
-      gap: 6px;
+      gap: 5px;
       background: #2f333d;
     }
     #navbar button {
@@ -94,13 +96,15 @@
       border-radius: 6px;
       background: transparent;
       color: #cfd3dc;
-      font-size: 16px;
+      font-size: 15px;
       cursor: pointer;
+      flex-shrink: 0;
     }
     #navbar button:hover:not(:disabled) { background: #3d424e; }
     #navbar button:disabled { color: #5b6070; cursor: default; }
     #address {
       flex: 1;
+      min-width: 120px;
       height: 32px;
       padding: 0 14px;
       border: 1px solid transparent;
@@ -112,22 +116,66 @@
       user-select: text;
     }
     #address:focus { border-color: #4d7fd6; }
+    #star.active { color: #ffd764; }
+    #keepalive.active { background: #263524; color: #8fd694; }
     #shield {
       display: flex;
       align-items: center;
       gap: 5px;
-      padding: 4px 10px;
+      height: 32px;
+      padding: 0 10px;
+      border: none;
       border-radius: 14px;
       background: #263524;
       color: #8fd694;
       font-size: 12px;
       white-space: nowrap;
-      cursor: default;
+      cursor: pointer;
+      flex-shrink: 0;
     }
-    #keepalive.active {
-      background: #263524;
-      color: #8fd694;
+    #shield.off { background: #3a2d2d; color: #d69a8f; }
+    #downloads { position: relative; }
+    #downloads.busy::after {
+      content: "";
+      position: absolute;
+      top: 4px; right: 4px;
+      width: 8px; height: 8px;
+      border-radius: 50%;
+      background: #6db3ff;
     }
+
+    /* ---- find bar ---- */
+    #findbar {
+      display: none;
+      align-items: center;
+      height: 34px;
+      padding: 0 10px;
+      gap: 6px;
+      background: #262a33;
+    }
+    #findbar.open { display: flex; }
+    #findtext {
+      width: 260px;
+      height: 26px;
+      padding: 0 10px;
+      border: 1px solid #3d424e;
+      border-radius: 6px;
+      background: #1b1d23;
+      color: #e8eaf0;
+      font-size: 12px;
+      outline: none;
+      user-select: text;
+    }
+    #findcount { font-size: 12px; color: #9aa0ad; }
+    #findbar button {
+      width: 26px; height: 26px;
+      border: none;
+      border-radius: 5px;
+      background: transparent;
+      color: #cfd3dc;
+      cursor: pointer;
+    }
+    #findbar button:hover { background: #3d424e; }
   </style>
 </head>
 <body>
@@ -138,8 +186,18 @@
     <button id="reload" title="रीलोड">&#8635;</button>
     <input id="address" type="text" spellcheck="false"
            placeholder="सर्च करें या वेब एड्रेस लिखें…" />
+    <button id="star" title="बुकमार्क (Ctrl+D)">☆</button>
     <button id="keepalive" title="ऑटो-लॉगआउट रोकें: इस साइट को लॉग-इन बनाए रखें">📌</button>
-    <div id="shield" title="इस टैब पर ब्लॉक किए गए ऐड/ट्रैकर">🛡 <span id="blocked">0</span></div>
+    <button id="shield" title="ऐड-ब्लॉकर — क्लिक करके इस साइट पर बंद/चालू करें">🛡 <span id="blocked">0</span></button>
+    <button id="downloads" title="डाउनलोड (Ctrl+J)">⬇</button>
+    <button id="menu" title="मेन्यू">☰</button>
+  </div>
+  <div id="findbar">
+    <input id="findtext" type="text" placeholder="पेज में खोजें…" />
+    <span id="findcount"></span>
+    <button id="findprev" title="पिछला">▲</button>
+    <button id="findnext" title="अगला">▼</button>
+    <button id="findclose" title="बंद करें">✕</button>
   </div>
   <script src="renderer.js"></script>
 </body>
