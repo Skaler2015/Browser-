@@ -49,7 +49,7 @@ function switchProfile(id) {
 function createNewProfile() {
   const reg = profileRegistry();
   const id = 'p' + Date.now();
-  reg.push({ id, name: 'प्रोफ़ाइल ' + (reg.length + 2) });
+  reg.push({ id, name: 'Profile ' + (reg.length + 2) });
   try {
     fs.mkdirSync(BASE_USERDATA, { recursive: true });
     fs.writeFileSync(PROFILES_REGISTRY, JSON.stringify(reg));
@@ -79,8 +79,8 @@ const settings = Object.assign(
     theme: 'dark',
     customFilters: '',
     timeLimits: {}, // host -> minutes per day
-    simpleMode: false, // बड़े-बुज़ुर्ग मोड
-    scamProtection: true, // भारत-केंद्रित ठगी चेतावनी
+    simpleMode: false, // large-text / senior-friendly mode
+    scamProtection: true, // India-focused scam warnings
     dataPackRate: 15, // ₹ per GB, for the money-saved meter
   },
   store.load('settings', {})
@@ -108,8 +108,8 @@ function engine() {
 }
 
 const THEMES = ['dark', 'light', 'blue', 'green', 'purple'];
-const THEME_NAMES = { dark: 'डार्क', light: 'लाइट', blue: 'नीला', green: 'हरा', purple: 'बैंगनी' };
-const TAB_COLORS = { red: 'लाल', yellow: 'पीला', green: 'हरा', blue: 'नीला', purple: 'बैंगनी' };
+const THEME_NAMES = { dark: 'Dark', light: 'Light', blue: 'Blue', green: 'Green', purple: 'Purple' };
+const TAB_COLORS = { red: 'Red', yellow: 'Yellow', green: 'Green', blue: 'Blue', purple: 'Purple' };
 
 // ---------------------------------------------------------------------------
 // Constants & state
@@ -315,7 +315,7 @@ function scamCheck(url) {
       return {
         host,
         real: realHost,
-        reason: 'यह ' + b.key.toUpperCase() + ' जैसी दिखती है पर इसकी असली साइट नहीं है।',
+        reason: 'This looks like ' + b.key.toUpperCase() + ' but it is not its genuine website.',
       };
     }
   }
@@ -323,7 +323,7 @@ function scamCheck(url) {
   const badTld = /\.(xyz|top|club|online|site|live|buzz|click|shop|fun|cyou|rest)$/.test(host);
   const isIp = /^\d{1,3}(\.\d{1,3}){3}$/.test(host);
   if (SCAM_WORDS.some((w) => full.includes(w)) && (badTld || isIp)) {
-    return { host, reason: 'इस पते में ठगी वाले शब्द और संदिग्ध पता है (KYC/लॉटरी/रिफ़ंड जैसी ठगी)।' };
+    return { host, reason: 'This address contains scam-related words and a suspicious domain (KYC/lottery/refund type scams).' };
   }
   return null;
 }
@@ -331,17 +331,17 @@ function scamCheck(url) {
 async function confirmScam(info) {
   const detail =
     info.reason +
-    (info.real ? '\n\nअसली और सुरक्षित साइट: ' + info.real : '') +
-    '\n\nबैंक/सरकार कभी फ़ोन/लिंक पर OTP, PIN, या पासवर्ड नहीं माँगते। सोच-समझकर आगे बढ़ें।';
+    (info.real ? '\n\nGenuine and safe site: ' + info.real : '') +
+    '\n\nBanks/government never ask for OTP, PIN, or password over a phone call or link. Proceed carefully.';
   const buttons = info.real
-    ? ['🔙 वापस रहें', '✅ असली साइट (' + info.real + ') खोलें', 'फिर भी यही खोलें (जोखिम)']
-    : ['🔙 वापस रहें (सुरक्षित)', 'फिर भी खोलें (जोखिम)'];
+    ? ['🔙 Go back', '✅ Open the real site (' + info.real + ')', 'Open this anyway (risky)']
+    : ['🔙 Go back (safe)', 'Open anyway (risky)'];
   const { response } = await dialog.showMessageBox(win, {
     type: 'warning',
     buttons,
     defaultId: 0,
     cancelId: 0,
-    message: '⚠️ सावधान — संभावित ठगी वाली साइट',
+    message: '⚠️ Caution — possible scam site',
     detail,
   });
   if (info.real) {
@@ -362,12 +362,12 @@ async function confirmScam(info) {
 async function confirmDanger(host) {
   const { response } = await dialog.showMessageBox(win, {
     type: 'error',
-    buttons: ['वापस रहें (सुरक्षित)', 'फिर भी खोलें (जोखिम)'],
+    buttons: ['Go back (safe)', 'Open anyway (risky)'],
     defaultId: 0,
     cancelId: 0,
-    message: '⚠️ ख़तरनाक साइट: ' + host,
+    message: '⚠️ Dangerous site: ' + host,
     detail:
-      'यह साइट मैलवेयर/धोखाधड़ी की सूची (URLhaus) में दर्ज है। इसे खोलना आपके कंप्यूटर और डेटा के लिए ख़तरनाक हो सकता है।',
+      'This site is listed in a malware/fraud database (URLhaus). Opening it can be dangerous for your computer and data.',
   });
   if (response === 1) {
     dangerAllowed.add(host);
@@ -746,11 +746,11 @@ function checkTimeLimit(tab, host) {
   dialog
     .showMessageBox(win, {
       type: 'info',
-      buttons: ['ठीक है', 'आज के लिए यह साइट ब्लॉक करें'],
+      buttons: ['OK', 'Block this site for today'],
       defaultId: 0,
       cancelId: 0,
-      message: '⏰ ' + key + ' पर आज की लिमिट पूरी हुई',
-      detail: 'आपने इस साइट के लिए रोज़ ' + limitMin + ' मिनट की लिमिट रखी है, जो आज पूरी हो गई है।',
+      message: '⏰ Today\'s limit reached for ' + key,
+      detail: 'You set a daily limit of ' + limitMin + ' minutes for this site, and it has been reached for today.',
     })
     .then(({ response }) => {
       if (response !== 1) return;
@@ -846,22 +846,22 @@ function trackerCompany(host) {
   for (const [pat, name] of TRACKER_COMPANIES) {
     if (host.includes(pat)) return name;
   }
-  return 'अन्य';
+  return 'Other';
 }
 
 const SITE_CATEGORIES = {
-  'सोशल मीडिया': ['facebook.', 'instagram.', 'twitter.', 'x.com', 'reddit.', 'linkedin.', 'snapchat.', 'threads.', 'web.whatsapp'],
-  'वीडियो': ['youtube.', 'netflix.', 'hotstar.', 'primevideo.', 'twitch.', 'jiocinema.', 'sonyliv.'],
-  'ख़बरें': ['news.google', 'ndtv.', 'aajtak.', 'bbc.', 'cnn.', 'indiatoday.', 'timesofindia.', 'bhaskar.', 'jagran.', 'amarujala.'],
-  'शॉपिंग': ['amazon.', 'flipkart.', 'myntra.', 'meesho.', 'snapdeal.', 'ajio.'],
-  'काम/पढ़ाई': ['github.', 'stackoverflow.', 'gitlab.', 'docs.google', 'mail.google', 'notion.', 'slack.', 'office.', 'teams.', 'wikipedia.'],
+  'Social media': ['facebook.', 'instagram.', 'twitter.', 'x.com', 'reddit.', 'linkedin.', 'snapchat.', 'threads.', 'web.whatsapp'],
+  'Video': ['youtube.', 'netflix.', 'hotstar.', 'primevideo.', 'twitch.', 'jiocinema.', 'sonyliv.'],
+  'News': ['news.google', 'ndtv.', 'aajtak.', 'bbc.', 'cnn.', 'indiatoday.', 'timesofindia.', 'bhaskar.', 'jagran.', 'amarujala.'],
+  'Shopping': ['amazon.', 'flipkart.', 'myntra.', 'meesho.', 'snapdeal.', 'ajio.'],
+  'Work/Study': ['github.', 'stackoverflow.', 'gitlab.', 'docs.google', 'mail.google', 'notion.', 'slack.', 'office.', 'teams.', 'wikipedia.'],
 };
 
 function siteCategory(host) {
   for (const [cat, pats] of Object.entries(SITE_CATEGORIES)) {
     if (pats.some((p) => host.includes(p))) return cat;
   }
-  return 'बाकी';
+  return 'Other';
 }
 
 function analyticsSummary() {
@@ -1049,7 +1049,7 @@ async function importBookmarks() {
   let file = candidates.find((p) => fs.existsSync(p));
   if (!file) {
     const r = await dialog.showOpenDialog(win, {
-      title: 'Chrome/Edge की Bookmarks फ़ाइल या एक्सपोर्ट की गई .html फ़ाइल चुनें',
+      title: 'Choose a Chrome/Edge Bookmarks file or an exported .html file',
       properties: ['openFile'],
     });
     if (r.canceled || !r.filePaths[0]) return;
@@ -1075,7 +1075,7 @@ async function importBookmarks() {
       while ((m = re.exec(raw))) items.push({ url: decodeEntities(m[1]), title: decodeEntities(m[2]) || m[1] });
     }
   } catch (err) {
-    dialog.showErrorBox('इम्पोर्ट नहीं हो पाया', String(err.message || err));
+    dialog.showErrorBox('Import failed', String(err.message || err));
     return;
   }
   let added = 0;
@@ -1088,8 +1088,8 @@ async function importBookmarks() {
   store.save('bookmarks', bookmarks);
   sendState();
   dialog.showMessageBox(win, {
-    message: added + ' नए बुकमार्क इम्पोर्ट हुए',
-    detail: 'फ़ाइल: ' + file + '\nकुल बुकमार्क: ' + bookmarks.length,
+    message: added + ' new bookmarks imported',
+    detail: 'File: ' + file + '\nTotal bookmarks: ' + bookmarks.length,
   });
 }
 
@@ -1363,11 +1363,11 @@ function createTab(url = START_PAGE, opts = {}) {
     const host = hostOf(original);
     const { response } = await dialog.showMessageBox(win, {
       type: 'warning',
-      buttons: ['असुरक्षित (http) खोलें', 'रहने दें'],
+      buttons: ['Open insecurely (http)', 'Cancel'],
       defaultId: 1,
       cancelId: 1,
-      message: host + ' सुरक्षित (https) रूप में नहीं खुल रहा',
-      detail: 'यह साइट बिना एन्क्रिप्शन के है। खोलने पर आपका डेटा रास्ते में पढ़ा जा सकता है।',
+      message: host + ' is not opening securely (https)',
+      detail: 'This site has no encryption. If you open it, your data can be read in transit.',
     });
     if (response === 0) {
       httpAllowed.add(host);
@@ -1587,7 +1587,7 @@ function sendState() {
         const wc = t.view.webContents;
         return {
           id: t.id,
-          title: t.asleep ? t.sleepTitle : wc.getTitle() || 'नया टैब',
+          title: t.asleep ? t.sleepTitle : wc.getTitle() || 'New tab',
           url: displayURL(tabURL(t)),
           loading: !t.asleep && wc.isLoading(),
           canGoBack: wc.navigationHistory.canGoBack(),
@@ -1696,7 +1696,7 @@ async function savePageAsPDF() {
     });
     if (!canceled && filePath) fs.writeFileSync(filePath, data);
   } catch (err) {
-    dialog.showErrorBox('PDF सेव नहीं हो पाया', String(err.message || err));
+    dialog.showErrorBox('Could not save PDF', String(err.message || err));
   }
 }
 
@@ -1723,18 +1723,18 @@ async function fullPageScreenshot() {
         wc.debugger.detach();
       } catch {}
     }
-    dialog.showErrorBox('स्क्रीनशॉट नहीं बन पाया', String(err.message || err));
+    dialog.showErrorBox('Could not take screenshot', String(err.message || err));
   }
 }
 
 async function clearBrowsingData() {
   const { response } = await dialog.showMessageBox(win, {
     type: 'warning',
-    buttons: ['हाँ, सब साफ़ करें', 'रहने दें'],
+    buttons: ['Yes, clear everything', 'Cancel'],
     defaultId: 1,
     cancelId: 1,
-    message: 'ब्राउज़िंग डेटा साफ़ करें?',
-    detail: 'कुकीज़, कैश और साइट डेटा मिट जाएगा — सभी साइटों से लॉगआउट हो जाएँगे। हिस्ट्री भी मिटेगी।',
+    message: 'Clear browsing data?',
+    detail: 'Cookies, cache and site data will be erased — you will be logged out of all sites. History will also be erased.',
   });
   if (response !== 0) return;
   await session.defaultSession.clearStorageData();
@@ -1763,23 +1763,23 @@ function showContextMenu(wc, params) {
   const tab = [...tabs.values()].find((t) => t.view.webContents === wc);
 
   items.push(
-    { label: 'पीछे', enabled: wc.navigationHistory.canGoBack(), click: () => wc.navigationHistory.goBack() },
-    { label: 'आगे', enabled: wc.navigationHistory.canGoForward(), click: () => wc.navigationHistory.goForward() },
-    { label: 'रीलोड', click: () => wc.reload() },
+    { label: 'Back', enabled: wc.navigationHistory.canGoBack(), click: () => wc.navigationHistory.goBack() },
+    { label: 'Forward', enabled: wc.navigationHistory.canGoForward(), click: () => wc.navigationHistory.goForward() },
+    { label: 'Reload', click: () => wc.reload() },
     { type: 'separator' }
   );
 
   if (params.linkURL) {
     items.push(
-      { label: 'लिंक नई टैब में खोलें', click: () => createTab(params.linkURL, { isPrivate: tab ? tab.isPrivate : false }) },
-      { label: 'लिंक कॉपी करें', click: () => clipboard.writeText(params.linkURL) },
+      { label: 'Open link in new tab', click: () => createTab(params.linkURL, { isPrivate: tab ? tab.isPrivate : false }) },
+      { label: 'Copy link', click: () => clipboard.writeText(params.linkURL) },
       { type: 'separator' }
     );
   }
   if (params.mediaType === 'image' && params.srcURL) {
     items.push(
-      { label: 'इमेज सेव करें', click: () => wc.downloadURL(params.srcURL) },
-      { label: 'इमेज कॉपी करें', click: () => wc.copyImageAt(params.x, params.y) },
+      { label: 'Save image', click: () => wc.downloadURL(params.srcURL) },
+      { label: 'Copy image', click: () => wc.copyImageAt(params.x, params.y) },
       { type: 'separator' }
     );
   }
@@ -1787,17 +1787,17 @@ function showContextMenu(wc, params) {
     const text = params.selectionText.trim();
     const short = text.length > 30 ? text.slice(0, 30) + '…' : text;
     items.push(
-      { label: 'कॉपी', role: 'copy' },
+      { label: 'Copy', role: 'copy' },
       {
-        label: `"${short}" सर्च करें`,
+        label: `Search for "${short}"`,
         click: () => createTab(engine().search + encodeURIComponent(text)),
       },
-      { label: '🗣 चुना हुआ पढ़कर सुनाएँ', click: () => runInActiveTab(TTS_SNIPPET) },
+      { label: '🗣 Read selection aloud', click: () => runInActiveTab(TTS_SNIPPET) },
       { type: 'separator' }
     );
   }
   if (params.isEditable) {
-    items.push({ role: 'cut', label: 'कट' }, { role: 'paste', label: 'पेस्ट' }, { type: 'separator' });
+    items.push({ role: 'cut', label: 'Cut' }, { role: 'paste', label: 'Paste' }, { type: 'separator' });
   }
   items.push({ label: 'Inspect', click: () => wc.inspectElement(params.x, params.y) });
 
@@ -1808,13 +1808,13 @@ function showTabContextMenu(id) {
   const tab = tabs.get(id);
   if (!tab) return;
   Menu.buildFromTemplate([
-    { label: tab.pinned ? '📍 अनपिन करें' : '📍 पिन करें', click: () => togglePin(id) },
+    { label: tab.pinned ? '📍 Unpin' : '📍 Pin', click: () => togglePin(id) },
     {
-      label: tab.muted ? '🔊 आवाज़ चालू करें' : '🔇 म्यूट करें',
+      label: tab.muted ? '🔊 Unmute' : '🔇 Mute',
       click: () => toggleMute(id),
     },
     {
-      label: '🎨 टैब का रंग (ग्रुप)',
+      label: '🎨 Tab color (group)',
       submenu: [
         ...Object.entries(TAB_COLORS).map(([key, name]) => ({
           label: name,
@@ -1828,7 +1828,7 @@ function showTabContextMenu(id) {
         })),
         { type: 'separator' },
         {
-          label: 'रंग हटाएँ',
+          label: 'Remove color',
           type: 'radio',
           checked: !tab.color,
           click: () => {
@@ -1840,21 +1840,21 @@ function showTabContextMenu(id) {
       ],
     },
     {
-      label: splitTabId === id ? '⿲ स्प्लिट से हटाएँ' : '⿲ स्प्लिट में दाईं तरफ़ दिखाएँ',
+      label: splitTabId === id ? '⿲ Remove from split' : '⿲ Show on the right in split view',
       enabled: splitTabId === id || id !== activeTabId,
       click: () => setSplitTab(id),
     },
-    { label: '↻ रीलोड', click: () => tabs.has(id) && tabs.get(id).view.webContents.reload() },
-    { label: '⧉ डुप्लिकेट', click: () => createTab(tabURL(tab), { isPrivate: tab.isPrivate, identity: tab.identity }) },
+    { label: '↻ Reload', click: () => tabs.has(id) && tabs.get(id).view.webContents.reload() },
+    { label: '⧉ Duplicate', click: () => createTab(tabURL(tab), { isPrivate: tab.isPrivate, identity: tab.identity }) },
     { type: 'separator' },
     {
-      label: '👥 इसी साइट को अलग पहचान से खोलें (दूसरा अकाउंट)',
+      label: '👥 Open this site with a separate identity (second account)',
       click: () => createTab(tabURL(tab), { identity: nextIdentity++ }),
     },
-    { label: '➕ नई पहचान वाला खाली टैब', click: () => createTab(START_PAGE, { identity: nextIdentity++ }) },
+    { label: '➕ Empty tab with a new identity', click: () => createTab(START_PAGE, { identity: nextIdentity++ }) },
     { type: 'separator' },
-    { label: 'बाकी सब टैब बंद करें', click: () => closeOtherTabs(id) },
-    { label: 'टैब बंद करें', click: () => closeTab(id) },
+    { label: 'Close other tabs', click: () => closeOtherTabs(id) },
+    { label: 'Close tab', click: () => closeTab(id) },
   ]).popup({ window: win });
 }
 
@@ -1979,7 +1979,7 @@ function cancelUpload() {
 }
 
 function quickAccess() {
-  const names = { home: '🏠 होम', desktop: '🖥 डेस्कटॉप', documents: '📄 दस्तावेज़', downloads: '⬇ डाउनलोड', pictures: '🖼 तस्वीरें' };
+  const names = { home: '🏠 Home', desktop: '🖥 Desktop', documents: '📄 Documents', downloads: '⬇ Downloads', pictures: '🖼 Pictures' };
   const out = [];
   for (const key of Object.keys(names)) {
     try {
@@ -2442,20 +2442,20 @@ function menuTemplate() {
     {
       label: 'File',
       submenu: [
-        { label: 'नया टैब', accelerator: 'CmdOrCtrl+T', click: () => createTab() },
+        { label: 'New tab', accelerator: 'CmdOrCtrl+T', click: () => createTab() },
         {
-          label: 'नया प्राइवेट टैब 🕶',
+          label: 'New private tab 🕶',
           accelerator: 'CmdOrCtrl+Shift+N',
           click: () => createTab(START_PAGE, { isPrivate: true }),
         },
-        { label: 'बंद टैब वापस खोलें', accelerator: 'CmdOrCtrl+Shift+T', click: reopenClosedTab },
-        { label: 'टैब बंद करें', accelerator: 'CmdOrCtrl+W', click: () => closeTab(activeTabId) },
+        { label: 'Reopen closed tab', accelerator: 'CmdOrCtrl+Shift+T', click: reopenClosedTab },
+        { label: 'Close tab', accelerator: 'CmdOrCtrl+W', click: () => closeTab(activeTabId) },
         { type: 'separator' },
         {
-          label: 'प्रोफ़ाइल',
+          label: 'Profile',
           submenu: [
             {
-              label: 'मुख्य प्रोफ़ाइल',
+              label: 'Main profile',
               type: 'radio',
               checked: !PROFILE,
               click: () => PROFILE && switchProfile(''),
@@ -2467,22 +2467,22 @@ function menuTemplate() {
               click: () => PROFILE !== p.id && switchProfile(p.id),
             })),
             { type: 'separator' },
-            { label: '+ नई प्रोफ़ाइल बनाएँ (रीस्टार्ट होगा)', click: createNewProfile },
+            { label: '+ Create new profile (will restart)', click: createNewProfile },
           ],
         },
         { type: 'separator' },
         {
-          label: 'प्रिंट…',
+          label: 'Print…',
           accelerator: 'CmdOrCtrl+P',
           click: () => {
             const tab = activeTab();
             if (tab) tab.view.webContents.print();
           },
         },
-        { label: 'पेज को PDF में सेव करें…', click: savePageAsPDF },
-        { label: 'पूरे पेज का स्क्रीनशॉट…', click: fullPageScreenshot },
+        { label: 'Save page as PDF…', click: savePageAsPDF },
+        { label: 'Full-page screenshot…', click: fullPageScreenshot },
         { type: 'separator' },
-        { role: 'quit', label: 'बंद करें' },
+        { role: 'quit', label: 'Quit' },
       ],
     },
     {
@@ -2500,27 +2500,27 @@ function menuTemplate() {
     {
       label: 'View',
       submenu: [
-        { label: 'रीलोड', accelerator: 'CmdOrCtrl+R', click: navReload },
-        { label: 'एड्रेस बार', accelerator: 'CmdOrCtrl+L', click: () => win && win.webContents.send('focus-address') },
-        { label: 'पेज में खोजें…', accelerator: 'CmdOrCtrl+F', click: () => win && win.webContents.send('find:open') },
-        { label: '📖 रीडर मोड', click: openReader },
-        { label: '🎦 पिक्चर-इन-पिक्चर (वीडियो)', click: () => runInActiveTab(PIP_SNIPPET) },
-        { label: '🗣 पेज पढ़कर सुनाएँ / रोकें', click: () => runInActiveTab(TTS_SNIPPET) },
-        { label: '🌍 इस पेज का हिंदी अनुवाद', click: translateActivePage },
+        { label: 'Reload', accelerator: 'CmdOrCtrl+R', click: navReload },
+        { label: 'Address bar', accelerator: 'CmdOrCtrl+L', click: () => win && win.webContents.send('focus-address') },
+        { label: 'Find in page…', accelerator: 'CmdOrCtrl+F', click: () => win && win.webContents.send('find:open') },
+        { label: '📖 Reader mode', click: openReader },
+        { label: '🎦 Picture-in-picture (video)', click: () => runInActiveTab(PIP_SNIPPET) },
+        { label: '🗣 Read page aloud / stop', click: () => runInActiveTab(TTS_SNIPPET) },
+        { label: '🌍 Translate this page to Hindi', click: translateActivePage },
         {
-          label: '⿲ स्प्लिट व्यू बंद करें',
+          label: '⿲ Close split view',
           enabled: splitTabId != null,
           click: () => setSplitTab(splitTabId),
         },
         { type: 'separator' },
-        { label: 'अगला टैब', accelerator: 'Control+Tab', click: () => cycleTab(1) },
-        { label: 'पिछला टैब', accelerator: 'Control+Shift+Tab', click: () => cycleTab(-1) },
+        { label: 'Next tab', accelerator: 'Control+Tab', click: () => cycleTab(1) },
+        { label: 'Previous tab', accelerator: 'Control+Shift+Tab', click: () => cycleTab(-1) },
         { type: 'separator' },
-        { label: 'ज़ूम बढ़ाएँ', accelerator: 'CmdOrCtrl+=', click: () => zoomActive(0.5) },
-        { label: 'ज़ूम घटाएँ', accelerator: 'CmdOrCtrl+-', click: () => zoomActive(-0.5) },
-        { label: 'ज़ूम रीसेट', accelerator: 'CmdOrCtrl+0', click: () => zoomActive(0) },
+        { label: 'Zoom in', accelerator: 'CmdOrCtrl+=', click: () => zoomActive(0.5) },
+        { label: 'Zoom out', accelerator: 'CmdOrCtrl+-', click: () => zoomActive(-0.5) },
+        { label: 'Reset zoom', accelerator: 'CmdOrCtrl+0', click: () => zoomActive(0) },
         { type: 'separator' },
-        { role: 'togglefullscreen', label: 'फ़ुल-स्क्रीन' },
+        { role: 'togglefullscreen', label: 'Full-screen' },
         {
           label: 'DevTools (page)',
           accelerator: 'CmdOrCtrl+Shift+I',
@@ -2534,29 +2534,29 @@ function menuTemplate() {
     {
       label: 'Library',
       submenu: [
-        { label: '⭐ बुकमार्क जोड़ें/हटाएँ', accelerator: 'CmdOrCtrl+D', click: toggleBookmark },
-        { label: 'बुकमार्क देखें', accelerator: 'CmdOrCtrl+B', click: () => createTab(internalURL('bookmarks')) },
-        { label: 'हिस्ट्री', accelerator: 'CmdOrCtrl+H', click: () => createTab(internalURL('history')) },
-        { label: 'डाउनलोड', accelerator: 'CmdOrCtrl+J', click: () => createTab(internalURL('downloads')) },
-        { label: '📊 ऐड-ब्लॉक आँकड़े', click: () => createTab(internalURL('stats')) },
-        { label: '📈 मेरी ब्राउज़िंग analytics', click: () => createTab(internalURL('analytics')) },
-        { label: '⏮ टाइम-मशीन (पुराने टैब वापस)', click: () => createTab(internalURL('timemachine')) },
+        { label: '⭐ Add/remove bookmark', accelerator: 'CmdOrCtrl+D', click: toggleBookmark },
+        { label: 'View bookmarks', accelerator: 'CmdOrCtrl+B', click: () => createTab(internalURL('bookmarks')) },
+        { label: 'History', accelerator: 'CmdOrCtrl+H', click: () => createTab(internalURL('history')) },
+        { label: 'Downloads', accelerator: 'CmdOrCtrl+J', click: () => createTab(internalURL('downloads')) },
+        { label: '📊 Ad-block stats', click: () => createTab(internalURL('stats')) },
+        { label: '📈 My browsing analytics', click: () => createTab(internalURL('analytics')) },
+        { label: '⏮ Time machine (restore old tabs)', click: () => createTab(internalURL('timemachine')) },
         { type: 'separator' },
-        { label: '📥 Chrome/Edge से बुकमार्क इम्पोर्ट…', click: importBookmarks },
-        { label: '📤 बुकमार्क एक्सपोर्ट (HTML)…', click: exportBookmarks },
+        { label: '📥 Import bookmarks from Chrome/Edge…', click: importBookmarks },
+        { label: '📤 Export bookmarks (HTML)…', click: exportBookmarks },
       ],
     },
     {
       label: 'Settings',
       submenu: [
         {
-          label: 'ऐड-ब्लॉकर',
+          label: 'Ad blocker',
           type: 'checkbox',
           checked: settings.adblockEnabled,
           click: (item) => setAdblockEnabled(item.checked),
         },
         {
-          label: 'HTTPS-only (असुरक्षित साइटों पर चेतावनी)',
+          label: 'HTTPS-only (warn on insecure sites)',
           type: 'checkbox',
           checked: settings.httpsOnly,
           click: (item) => {
@@ -2565,7 +2565,7 @@ function menuTemplate() {
           },
         },
         {
-          label: '🛡 भारत-केंद्रित ठगी सुरक्षा (नक़ली बैंक/KYC/लॉटरी)',
+          label: '🛡 India-focused scam protection (fake bank/KYC/lottery)',
           type: 'checkbox',
           checked: settings.scamProtection,
           click: (item) => {
@@ -2574,7 +2574,7 @@ function menuTemplate() {
           },
         },
         {
-          label: '👵 सरल मोड (बड़े बटन/अक्षर, ज़्यादा सुरक्षा)',
+          label: '👵 Simple mode (bigger buttons/text, more safety)',
           type: 'checkbox',
           checked: settings.simpleMode,
           click: (item) => {
@@ -2584,7 +2584,7 @@ function menuTemplate() {
           },
         },
         {
-          label: 'मेमोरी सेवर (पुराने टैब सुला दें)',
+          label: 'Memory saver (sleep old tabs)',
           type: 'checkbox',
           checked: settings.tabSleep,
           click: (item) => {
@@ -2593,7 +2593,7 @@ function menuTemplate() {
           },
         },
         {
-          label: 'डेटा सेवर (नई टैबों में इमेज बंद)',
+          label: 'Data saver (no images in new tabs)',
           type: 'checkbox',
           checked: settings.dataSaver,
           click: (item) => {
@@ -2602,21 +2602,21 @@ function menuTemplate() {
           },
         },
         {
-          label: 'डार्क मोड (हर साइट पर) — रीस्टार्ट ज़रूरी',
+          label: 'Dark mode (on every site) — restart required',
           type: 'checkbox',
           checked: settings.forceDark,
           click: (item) => {
             settings.forceDark = item.checked;
             saveSettings();
             dialog.showMessageBox(win, {
-              message: 'डार्क मोड ' + (item.checked ? 'चालू' : 'बंद') + ' होगा',
-              detail: 'यह बदलाव ब्राउज़र दोबारा खोलने पर लागू होगा।',
+              message: 'Dark mode will be turned ' + (item.checked ? 'on' : 'off'),
+              detail: 'This change will take effect the next time you open the browser.',
             });
           },
         },
         { type: 'separator' },
         {
-          label: '🎨 थीम',
+          label: '🎨 Theme',
           submenu: THEMES.map((t) => ({
             label: THEME_NAMES[t],
             type: 'radio',
@@ -2629,7 +2629,7 @@ function menuTemplate() {
           })),
         },
         {
-          label: 'सर्च इंजन',
+          label: 'Search engine',
           submenu: Object.entries(SEARCH_ENGINES).map(([key, e]) => ({
             label: e.name,
             type: 'radio',
@@ -2641,10 +2641,10 @@ function menuTemplate() {
           })),
         },
         {
-          label: 'डाउनलोड',
+          label: 'Downloads',
           submenu: [
             {
-              label: 'हर बार पूछें कहाँ सेव करना है',
+              label: 'Ask every time where to save',
               type: 'checkbox',
               checked: settings.askDownloadPath,
               click: (item) => {
@@ -2652,11 +2652,11 @@ function menuTemplate() {
                 saveSettings();
               },
             },
-            { label: 'डाउनलोड फ़ोल्डर बदलें…', click: chooseDownloadDir },
+            { label: 'Change download folder…', click: chooseDownloadDir },
           ],
         },
         { type: 'separator' },
-        { label: '🧹 ब्राउज़िंग डेटा साफ़ करें…', click: clearBrowsingData },
+        { label: '🧹 Clear browsing data…', click: clearBrowsingData },
       ],
     },
   ];
