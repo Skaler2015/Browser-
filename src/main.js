@@ -1,4 +1,4 @@
-const { app, BrowserWindow, WebContentsView, ipcMain, session, Menu } = require('electron');
+const { app, BrowserWindow, WebContentsView, ipcMain, session, Menu, powerSaveBlocker } = require('electron');
 const path = require('path');
 const fs = require('fs');
 
@@ -45,6 +45,46 @@ async function setupAdBlocker() {
 }
 
 // ---------------------------------------------------------------------------
+// Keep-alive: prevent inactivity auto-logout on sites where the user enables it
+// ---------------------------------------------------------------------------
+const KEEP_ALIVE_INTERVAL_MS = 60 * 1000;
+let powerBlockerId = null;
+
+// Simulated user activity: fires the events idle-timers listen for
+// (mousemove / scroll / keydown). It does not type into fields or click.
+const KEEP_ALIVE_SNIPPET = `(() => {
+  try {
+    const x = Math.floor(Math.random() * window.innerWidth);
+    const y = Math.floor(Math.random() * window.innerHeight);
+    const opts = { bubbles: true, cancelable: true, view: window, clientX: x, clientY: y };
+    document.dispatchEvent(new MouseEvent('mousemove', opts));
+    window.dispatchEvent(new Event('scroll', { bubbles: true }));
+    document.dispatchEvent(new KeyboardEvent('keydown', { bubbles: true, key: 'Shift' }));
+    document.dispatchEvent(new KeyboardEvent('keyup', { bubbles: true, key: 'Shift' }));
+  } catch (e) {}
+})();`;
+
+setInterval(() => {
+  for (const tab of tabs.values()) {
+    const wc = tab.view.webContents;
+    if (tab.keepAlive && !wc.isDestroyed() && !wc.isLoading()) {
+      wc.executeJavaScript(KEEP_ALIVE_SNIPPET, true).catch(() => {});
+    }
+  }
+}, KEEP_ALIVE_INTERVAL_MS);
+
+// While any tab has keep-alive on, stop the OS from suspending the app.
+function updatePowerBlocker() {
+  const anyKeepAlive = [...tabs.values()].some((t) => t.keepAlive);
+  if (anyKeepAlive && powerBlockerId === null) {
+    powerBlockerId = powerSaveBlocker.start('prevent-app-suspension');
+  } else if (!anyKeepAlive && powerBlockerId !== null) {
+    powerSaveBlocker.stop(powerBlockerId);
+    powerBlockerId = null;
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Tabs
 // ---------------------------------------------------------------------------
 function adblockerPreload() {
@@ -62,11 +102,12 @@ function createTab(url = START_PAGE, activate = true) {
       sandbox: true,
       contextIsolation: true,
       nodeIntegration: false,
+      backgroundThrottling: false, // background tabs keep running -> sessions stay alive
       preload: adblockerPreload(), // cosmetic filtering (hides leftover ad frames)
     },
   });
 
-  const tab = { id, view, blocked: 0 };
+  const tab = { id, view, blocked: 0, keepAlive: false };
   tabs.set(id, tab);
   win.contentView.addChildView(view);
 
@@ -107,6 +148,7 @@ function closeTab(id) {
   win.contentView.removeChildView(tab.view);
   tab.view.webContents.close();
   tabs.delete(id);
+  updatePowerBlocker();
 
   if (tabs.size === 0) {
     createTab();
@@ -156,6 +198,7 @@ function sendState() {
         canGoBack: wc.navigationHistory.canGoBack(),
         canGoForward: wc.navigationHistory.canGoForward(),
         blocked: t.blocked,
+        keepAlive: t.keepAlive,
       };
     }),
   };
@@ -211,6 +254,13 @@ ipcMain.on('nav:reload', () => {
 ipcMain.on('nav:stop', () => {
   const tab = activeTab();
   if (tab) tab.view.webContents.stop();
+});
+ipcMain.on('keepalive:toggle', (_e, id) => {
+  const tab = tabs.get(id);
+  if (!tab) return;
+  tab.keepAlive = !tab.keepAlive;
+  updatePowerBlocker();
+  sendState();
 });
 
 // ---------------------------------------------------------------------------

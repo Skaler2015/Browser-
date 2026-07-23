@@ -124,6 +124,10 @@
       white-space: nowrap;
       cursor: default;
     }
+    #keepalive.active {
+      background: #263524;
+      color: #8fd694;
+    }
   </style>
 </head>
 <body>
@@ -134,6 +138,7 @@
     <button id="reload" title="रीलोड">&#8635;</button>
     <input id="address" type="text" spellcheck="false"
            placeholder="सर्च करें या वेब एड्रेस लिखें…" />
+    <button id="keepalive" title="ऑटो-लॉगआउट रोकें: इस साइट को लॉग-इन बनाए रखें">📌</button>
     <div id="shield" title="इस टैब पर ब्लॉक किए गए ऐड/ट्रैकर">🛡 <span id="blocked">0</span></div>
   </div>
   <script src="renderer.js"></script>

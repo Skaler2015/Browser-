@@ -4,6 +4,7 @@ const backBtn = document.getElementById('back');
 const forwardBtn = document.getElementById('forward');
 const reloadBtn = document.getElementById('reload');
 const blockedEl = document.getElementById('blocked');
+const keepAliveBtn = document.getElementById('keepalive');
 
 let currentState = { tabs: [], activeTabId: null };
 
@@ -58,6 +59,10 @@ function render(state) {
     reloadBtn.textContent = active.loading ? '×' : '↻';
     reloadBtn.title = active.loading ? 'रोकें' : 'रीलोड';
     blockedEl.textContent = active.blocked;
+    keepAliveBtn.classList.toggle('active', !!active.keepAlive);
+    keepAliveBtn.title = active.keepAlive
+      ? 'लॉग-इन बनाए रखना चालू है (बंद करने के लिए क्लिक करें)'
+      : 'ऑटो-लॉगआउट रोकें: इस साइट को लॉग-इन बनाए रखें';
     document.title = active.title + ' — TezBrowser';
   }
 }
@@ -73,6 +78,12 @@ address.addEventListener('keydown', (e) => {
   if (e.key === 'Enter' && address.value.trim()) {
     window.browser.navigate(address.value);
     address.blur();
+  }
+});
+
+keepAliveBtn.addEventListener('click', () => {
+  if (currentState.activeTabId != null) {
+    window.browser.toggleKeepAlive(currentState.activeTabId);
   }
 });
 

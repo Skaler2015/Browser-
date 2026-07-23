@@ -9,6 +9,7 @@ contextBridge.exposeInMainWorld('browser', {
   forward: () => ipcRenderer.send('nav:forward'),
   reload: () => ipcRenderer.send('nav:reload'),
   stop: () => ipcRenderer.send('nav:stop'),
+  toggleKeepAlive: (id) => ipcRenderer.send('keepalive:toggle', id),
   onState: (cb) => ipcRenderer.on('state', (_e, state) => cb(state)),
   onFocusAddress: (cb) => ipcRenderer.on('focus-address', () => cb()),
 });
