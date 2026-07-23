@@ -10,6 +10,7 @@ const {
   shell,
   clipboard,
   nativeTheme,
+  powerMonitor,
 } = require('electron');
 const path = require('path');
 const fs = require('fs');
@@ -77,6 +78,7 @@ const settings = Object.assign(
     downloadDir: '',
     theme: 'dark',
     customFilters: '',
+    timeLimits: {}, // host -> minutes per day
   },
   store.load('settings', {})
 );
@@ -120,6 +122,7 @@ const INTERNAL_PAGES = {
   downloads: 'downloads.html',
   reader: 'reader.html',
   stats: 'stats.html',
+  analytics: 'analytics.html',
 };
 const INTERNAL_PRELOAD = path.join(__dirname, 'internal-preload.js');
 const HISTORY_LIMIT = 5000;
@@ -143,6 +146,20 @@ const bookmarks = store.load('bookmarks', []); // [{url, title, ts}]
 const history = store.load('history', []); // [{url, title, ts}] newest first
 const zoomLevels = store.load('zoom', {}); // host -> zoom level
 const stats = Object.assign({ total: 0, days: {} }, store.load('stats', {}));
+
+// All analytics data stays on this machine only; private tabs are never recorded.
+const analytics = Object.assign(
+  {
+    time: {}, // day -> { host: seconds actively viewed }
+    hours: {}, // day -> { hour(0-23): seconds }
+    data: {}, // day -> { host: bytes downloaded }
+    trackers: {}, // blocked tracker host -> count
+    siteBlocked: {}, // site host -> count of ads/trackers blocked there
+    limitBlocked: { date: '', hosts: [] }, // sites the user blocked for today
+    downloads: { count: 0, bytes: 0 },
+  },
+  store.load('analytics', {})
+);
 
 const downloads = []; // [{id, filename, savePath, url, state, received, total, ts}]
 const downloadItems = new Map(); // id -> DownloadItem
@@ -259,8 +276,12 @@ async function confirmDanger(host) {
   return false;
 }
 
-// Load a URL only after the malware check passes (or the user overrides).
+// Load a URL only after the malware and screen-time checks pass.
 function guardedLoad(wc, url) {
+  if (isLimitBlocked(url)) {
+    wc.loadURL(START_PAGE);
+    return;
+  }
   const host = maybeDangerous(url);
   if (!host) {
     wc.loadURL(url);
@@ -289,9 +310,22 @@ function recordBlocked(request) {
   for (const tab of tabs.values()) {
     if (tab.view.webContents.id === request.tabId) {
       tab.blocked += 1;
+      if (!tab.isPrivate) {
+        const siteHost = hostOf(tabURL(tab));
+        if (siteHost) {
+          analytics.siteBlocked[siteHost] = (analytics.siteBlocked[siteHost] || 0) + 1;
+        }
+      }
       break;
     }
   }
+  const trackerHost = (request.hostname || hostOf(request.url) || '').toLowerCase();
+  if (trackerHost && Object.keys(analytics.trackers).length < 2000) {
+    analytics.trackers[trackerHost] = (analytics.trackers[trackerHost] || 0) + 1;
+  } else if (trackerHost && analytics.trackers[trackerHost] != null) {
+    analytics.trackers[trackerHost] += 1;
+  }
+  store.saveDebounced('analytics', analytics, 5000);
   stats.total += 1;
   const day = new Date().toISOString().slice(0, 10);
   stats.days[day] = (stats.days[day] || 0) + 1;
@@ -414,6 +448,11 @@ function wireSession(ses) {
       entry.savePath = item.getSavePath();
       entry.received = item.getReceivedBytes();
       entry.state = state === 'completed' ? 'completed' : state === 'cancelled' ? 'cancelled' : 'interrupted';
+      if (state === 'completed') {
+        analytics.downloads.count += 1;
+        analytics.downloads.bytes += entry.received;
+        store.saveDebounced('analytics', analytics, 5000);
+      }
       downloadItems.delete(id);
       sendStateThrottled();
     });
@@ -516,6 +555,289 @@ function wakeTab(tab) {
   tab.asleep = false;
   tab.lastActive = Date.now();
   tab.view.webContents.loadURL(tab.sleepURL);
+}
+
+// ---------------------------------------------------------------------------
+// Browsing analytics (local only): active time per site, hourly pattern,
+// data usage, tracker breakdown, screen-time limits
+// ---------------------------------------------------------------------------
+const ANALYTICS_KEEP_DAYS = 60;
+const TIME_TICK_S = 15;
+const limitWarned = new Set(); // "host|day" already warned
+
+function localDayKey(d = new Date()) {
+  return (
+    d.getFullYear() +
+    '-' +
+    String(d.getMonth() + 1).padStart(2, '0') +
+    '-' +
+    String(d.getDate()).padStart(2, '0')
+  );
+}
+
+function pruneAnalytics() {
+  for (const section of ['time', 'hours', 'data']) {
+    const keys = Object.keys(analytics[section]).sort();
+    while (keys.length > ANALYTICS_KEEP_DAYS) delete analytics[section][keys.shift()];
+  }
+}
+
+function limitKeyFor(host) {
+  for (const k of Object.keys(settings.timeLimits || {})) {
+    if (host === k || host.endsWith('.' + k)) return k;
+  }
+  return null;
+}
+
+function usageTodayFor(limitKey) {
+  const day = analytics.time[localDayKey()] || {};
+  let sec = 0;
+  for (const [host, s] of Object.entries(day)) {
+    if (host === limitKey || host.endsWith('.' + limitKey)) sec += s;
+  }
+  return sec;
+}
+
+function blockForToday(host) {
+  const today = localDayKey();
+  if (analytics.limitBlocked.date !== today) {
+    analytics.limitBlocked = { date: today, hosts: [] };
+  }
+  if (!analytics.limitBlocked.hosts.includes(host)) analytics.limitBlocked.hosts.push(host);
+  store.save('analytics', analytics);
+}
+
+function isLimitBlocked(url) {
+  if (analytics.limitBlocked.date !== localDayKey()) return false;
+  const host = hostOf(url);
+  return !!host && analytics.limitBlocked.hosts.some((b) => host === b || host.endsWith('.' + b));
+}
+
+function checkTimeLimit(tab, host) {
+  const key = limitKeyFor(host);
+  if (!key) return;
+  const limitMin = settings.timeLimits[key];
+  if (!limitMin || usageTodayFor(key) < limitMin * 60) return;
+  const warnKey = key + '|' + localDayKey();
+  if (limitWarned.has(warnKey)) return;
+  limitWarned.add(warnKey);
+  dialog
+    .showMessageBox(win, {
+      type: 'info',
+      buttons: ['ठीक है', 'आज के लिए यह साइट ब्लॉक करें'],
+      defaultId: 0,
+      cancelId: 0,
+      message: '⏰ ' + key + ' पर आज की लिमिट पूरी हुई',
+      detail: 'आपने इस साइट के लिए रोज़ ' + limitMin + ' मिनट की लिमिट रखी है, जो आज पूरी हो गई है।',
+    })
+    .then(({ response }) => {
+      if (response !== 1) return;
+      blockForToday(key);
+      for (const t of tabs.values()) {
+        const h = hostOf(tabURL(t));
+        if (h && (h === key || h.endsWith('.' + key))) t.view.webContents.loadURL(START_PAGE);
+      }
+    });
+}
+
+// Count active time: window focused, user not idle, real website in front.
+setInterval(() => {
+  try {
+    if (!win || win.isDestroyed() || !win.isFocused()) return;
+    if (powerMonitor.getSystemIdleTime() > 60) return;
+    const tab = activeTab();
+    if (!tab || tab.isPrivate || tab.asleep) return;
+    const url = tabURL(tab);
+    if (!/^https?:\/\//.test(url)) return;
+    const host = hostOf(url);
+    if (!host) return;
+    const day = localDayKey();
+    const hour = String(new Date().getHours());
+    (analytics.time[day] = analytics.time[day] || {})[host] =
+      (analytics.time[day][host] || 0) + TIME_TICK_S;
+    (analytics.hours[day] = analytics.hours[day] || {})[hour] =
+      (analytics.hours[day][hour] || 0) + TIME_TICK_S;
+    pruneAnalytics();
+    store.saveDebounced('analytics', analytics, 5000);
+    checkTimeLimit(tab, host);
+  } catch {}
+}, TIME_TICK_S * 1000);
+
+// Rough per-site data usage from Content-Length of completed responses.
+function wireDataUsage(ses) {
+  ses.webRequest.onCompleted((details) => {
+    try {
+      const h =
+        details.responseHeaders &&
+        (details.responseHeaders['Content-Length'] || details.responseHeaders['content-length']);
+      const bytes = parseInt(Array.isArray(h) ? h[0] : h, 10) || 0;
+      if (!bytes) return;
+      let host = '';
+      for (const t of tabs.values()) {
+        if (t.view.webContents.id === details.webContentsId) {
+          host = hostOf(tabURL(t));
+          break;
+        }
+      }
+      if (!host && details.initiator) host = hostOf(details.initiator);
+      if (!host) return;
+      const day = localDayKey();
+      (analytics.data[day] = analytics.data[day] || {})[host] =
+        (analytics.data[day][host] || 0) + bytes;
+      store.saveDebounced('analytics', analytics, 5000);
+    } catch {}
+  });
+}
+
+const TRACKER_COMPANIES = [
+  ['doubleclick', 'Google'],
+  ['google-analytics', 'Google'],
+  ['googletagmanager', 'Google'],
+  ['googlesyndication', 'Google'],
+  ['googleadservices', 'Google'],
+  ['facebook', 'Meta'],
+  ['fbcdn', 'Meta'],
+  ['instagram', 'Meta'],
+  ['amazon-adsystem', 'Amazon'],
+  ['criteo', 'Criteo'],
+  ['taboola', 'Taboola'],
+  ['outbrain', 'Outbrain'],
+  ['hotjar', 'Hotjar'],
+  ['yandex', 'Yandex'],
+  ['demdex', 'Adobe'],
+  ['omtrdc', 'Adobe'],
+  ['scorecardresearch', 'Comscore'],
+  ['quantserve', 'Quantcast'],
+  ['tiktok', 'TikTok'],
+  ['ads-twitter', 'X (Twitter)'],
+  ['linkedin', 'LinkedIn'],
+  ['clarity.ms', 'Microsoft'],
+  ['bing', 'Microsoft'],
+  ['adnxs', 'Xandr'],
+  ['pubmatic', 'PubMatic'],
+  ['rubiconproject', 'Magnite'],
+  ['openx', 'OpenX'],
+];
+
+function trackerCompany(host) {
+  for (const [pat, name] of TRACKER_COMPANIES) {
+    if (host.includes(pat)) return name;
+  }
+  return 'अन्य';
+}
+
+const SITE_CATEGORIES = {
+  'सोशल मीडिया': ['facebook.', 'instagram.', 'twitter.', 'x.com', 'reddit.', 'linkedin.', 'snapchat.', 'threads.', 'web.whatsapp'],
+  'वीडियो': ['youtube.', 'netflix.', 'hotstar.', 'primevideo.', 'twitch.', 'jiocinema.', 'sonyliv.'],
+  'ख़बरें': ['news.google', 'ndtv.', 'aajtak.', 'bbc.', 'cnn.', 'indiatoday.', 'timesofindia.', 'bhaskar.', 'jagran.', 'amarujala.'],
+  'शॉपिंग': ['amazon.', 'flipkart.', 'myntra.', 'meesho.', 'snapdeal.', 'ajio.'],
+  'काम/पढ़ाई': ['github.', 'stackoverflow.', 'gitlab.', 'docs.google', 'mail.google', 'notion.', 'slack.', 'office.', 'teams.', 'wikipedia.'],
+};
+
+function siteCategory(host) {
+  for (const [cat, pats] of Object.entries(SITE_CATEGORIES)) {
+    if (pats.some((p) => host.includes(p))) return cat;
+  }
+  return 'बाकी';
+}
+
+function analyticsSummary() {
+  const today = localDayKey();
+  const dayKeys = [];
+  for (let i = 0; i < 30; i++) {
+    dayKeys.push(localDayKey(new Date(Date.now() - i * 24 * 3600 * 1000)));
+  }
+  const sum = (obj) => Object.values(obj || {}).reduce((a, b) => a + b, 0);
+
+  const days30 = dayKeys.map((d) => ({ day: d, sec: sum(analytics.time[d]) })).reverse();
+  const todaySec = sum(analytics.time[today]);
+  let weekSec = 0;
+  let lastWeekSec = 0;
+  dayKeys.slice(0, 7).forEach((d) => (weekSec += sum(analytics.time[d])));
+  dayKeys.slice(7, 14).forEach((d) => (lastWeekSec += sum(analytics.time[d])));
+
+  const siteAgg = (keys) => {
+    const m = {};
+    for (const d of keys) {
+      for (const [host, s] of Object.entries(analytics.time[d] || {})) m[host] = (m[host] || 0) + s;
+    }
+    return Object.entries(m)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 10)
+      .map(([host, sec]) => ({ host, sec }));
+  };
+
+  const categories = {};
+  for (const d of dayKeys.slice(0, 7)) {
+    for (const [host, s] of Object.entries(analytics.time[d] || {})) {
+      const cat = siteCategory(host);
+      categories[cat] = (categories[cat] || 0) + s;
+    }
+  }
+
+  // weekday(0-6) x hour(0-23) heatmap over the last 28 days
+  const heatmap = Array.from({ length: 7 }, () => Array(24).fill(0));
+  for (let i = 0; i < 28; i++) {
+    const d = new Date(Date.now() - i * 24 * 3600 * 1000);
+    const key = localDayKey(d);
+    const wd = d.getDay();
+    for (const [hour, s] of Object.entries(analytics.hours[key] || {})) {
+      heatmap[wd][Number(hour)] += s;
+    }
+  }
+
+  const companies = {};
+  for (const [host, n] of Object.entries(analytics.trackers)) {
+    const c = trackerCompany(host);
+    companies[c] = (companies[c] || 0) + n;
+  }
+
+  const dataAgg = (keys) => {
+    const m = {};
+    for (const d of keys) {
+      for (const [host, b] of Object.entries(analytics.data[d] || {})) m[host] = (m[host] || 0) + b;
+    }
+    return m;
+  };
+  const dataToday = Object.entries(dataAgg([today]))
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 10)
+    .map(([host, bytes]) => ({ host, bytes }));
+  const dataWeekTotal = sum(dataAgg(dayKeys.slice(0, 7)));
+
+  const limits = Object.entries(settings.timeLimits || {}).map(([host, minutes]) => ({
+    host,
+    minutes,
+    usedSec: usageTodayFor(host),
+  }));
+
+  return {
+    todaySec,
+    weekSec,
+    lastWeekSec,
+    days30,
+    topToday: siteAgg([today]),
+    topWeek: siteAgg(dayKeys.slice(0, 7)),
+    categories,
+    heatmap,
+    trackers: Object.entries(analytics.trackers)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 15)
+      .map(([host, count]) => ({ host, count, company: trackerCompany(host) })),
+    companies: Object.entries(companies)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 8)
+      .map(([name, count]) => ({ name, count })),
+    dirtySites: Object.entries(analytics.siteBlocked)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 10)
+      .map(([host, count]) => ({ host, count })),
+    dataToday,
+    dataWeekTotal,
+    limits,
+    blockedToday: analytics.limitBlocked.date === today ? analytics.limitBlocked.hosts : [],
+    downloads: analytics.downloads,
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -860,6 +1182,10 @@ function createTab(url = START_PAGE, opts = {}) {
 
   // Malware check + HTTPS-only upgrade for page-initiated navigation
   wc.on('will-navigate', (e, target) => {
+    if (isLimitBlocked(target)) {
+      e.preventDefault();
+      return;
+    }
     const dangerHost = maybeDangerous(target);
     if (dangerHost) {
       e.preventDefault();
@@ -1471,6 +1797,7 @@ ipcMain.handle('tez:list', (event, kind) => {
   if (kind === 'search') return { action: engine().action, name: engine().name };
   if (kind === 'reader') return readerContent;
   if (kind === 'stats') return statsSummary();
+  if (kind === 'analytics') return analyticsSummary();
   return null;
 });
 
@@ -1505,6 +1832,36 @@ ipcMain.handle('tez:action', (event, { kind, action, payload }) => {
   }
   if (kind === 'stats') {
     if (action === 'setFilters') return setCustomFilters(payload);
+  }
+  if (kind === 'analytics') {
+    if (action === 'setLimit' && payload && payload.host) {
+      const h = String(payload.host).trim().toLowerCase().replace(/^www\./, '').replace(/^https?:\/\//, '').split('/')[0];
+      const m = Math.max(1, parseInt(payload.minutes, 10) || 0);
+      if (!h) return false;
+      settings.timeLimits[h] = m;
+      saveSettings();
+      return true;
+    }
+    if (action === 'removeLimit') {
+      delete settings.timeLimits[payload];
+      saveSettings();
+      return true;
+    }
+    if (action === 'unblock') {
+      analytics.limitBlocked.hosts = analytics.limitBlocked.hosts.filter((h) => h !== payload);
+      store.save('analytics', analytics);
+      return true;
+    }
+    if (action === 'clearAll') {
+      analytics.time = {};
+      analytics.hours = {};
+      analytics.data = {};
+      analytics.trackers = {};
+      analytics.siteBlocked = {};
+      analytics.downloads = { count: 0, bytes: 0 };
+      store.save('analytics', analytics);
+      return true;
+    }
   }
   if (kind === 'downloads') {
     const entry = downloads.find((d) => d.id === payload);
@@ -1636,6 +1993,7 @@ function menuTemplate() {
         { label: 'हिस्ट्री', accelerator: 'CmdOrCtrl+H', click: () => createTab(internalURL('history')) },
         { label: 'डाउनलोड', accelerator: 'CmdOrCtrl+J', click: () => createTab(internalURL('downloads')) },
         { label: '📊 ऐड-ब्लॉक आँकड़े', click: () => createTab(internalURL('stats')) },
+        { label: '📈 मेरी ब्राउज़िंग analytics', click: () => createTab(internalURL('analytics')) },
         { type: 'separator' },
         { label: '📥 Chrome/Edge से बुकमार्क इम्पोर्ट…', click: importBookmarks },
         { label: '📤 बुकमार्क एक्सपोर्ट (HTML)…', click: exportBookmarks },
@@ -1776,6 +2134,7 @@ function createWindow() {
 app.whenReady().then(async () => {
   Menu.setApplicationMenu(Menu.buildFromTemplate(menuTemplate()));
   wireSession(session.defaultSession);
+  wireDataUsage(session.defaultSession); // private session stays unrecorded
   setupSafeBrowsing(); // runs in the background; browsing works meanwhile
   await setupAdBlocker(); // block from the very first request
   createWindow();

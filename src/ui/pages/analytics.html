@@ -1,0 +1,323 @@
+<!DOCTYPE html>
+<html lang="hi">
+<head>
+  <meta charset="UTF-8" />
+  <title>मेरी ब्राउज़िंग analytics</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: "Segoe UI", system-ui, sans-serif;
+      background: #1b1d23;
+      color: #e8eaf0;
+      padding: 32px 24px 60px 24px;
+      max-width: 900px;
+      margin: 0 auto;
+    }
+    h1 { font-size: 22px; margin-bottom: 6px; }
+    .sub { font-size: 12px; color: #8a90a0; margin-bottom: 20px; }
+    h2 { font-size: 16px; margin: 30px 0 10px 0; }
+    .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 12px; }
+    .card { background: #23262e; border-radius: 12px; padding: 18px; text-align: center; }
+    .card .n { font-size: 26px; font-weight: 600; color: #6db3ff; }
+    .card .l { font-size: 12px; color: #8a90a0; margin-top: 6px; }
+    .card .d { font-size: 11px; margin-top: 4px; }
+    .up { color: #d69a8f; }
+    .down { color: #8fd694; }
+
+    .chart {
+      display: flex; align-items: flex-end; gap: 3px;
+      height: 110px; background: #23262e; border-radius: 12px; padding: 12px;
+    }
+    .chart .bar { flex: 1; background: #4d7fd6; border-radius: 3px 3px 0 0; min-height: 2px; }
+    .chart .bar:hover { background: #6db3ff; }
+
+    .rows { background: #23262e; border-radius: 12px; padding: 8px 14px; }
+    .row { display: flex; align-items: center; gap: 10px; padding: 7px 0; font-size: 13px; }
+    .row + .row { border-top: 1px solid #2f333d; }
+    .row .name { flex: 0 0 220px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+    .row .track { flex: 1; height: 8px; background: #14161a; border-radius: 4px; overflow: hidden; }
+    .row .track > div { height: 100%; background: #58c274; }
+    .row.t .track > div { background: #e5655f; }
+    .row.d .track > div { background: #e8c94f; }
+    .row .val { flex: 0 0 90px; text-align: right; color: #8a90a0; font-size: 12px; }
+    .row button {
+      border: none; background: #3a2d2d; color: #ff9d8f;
+      font-size: 11px; padding: 4px 10px; border-radius: 6px; cursor: pointer;
+    }
+
+    .heat { background: #23262e; border-radius: 12px; padding: 14px; overflow-x: auto; }
+    .heat table { border-collapse: collapse; }
+    .heat td, .heat th { padding: 0; }
+    .heat th { font-size: 10px; color: #8a90a0; font-weight: normal; padding-right: 6px; text-align: right; }
+    .heat .cell { width: 22px; height: 16px; border: 1px solid #1b1d23; background: #2a2e38; }
+    .heat .hlabel { font-size: 9px; color: #6d7484; text-align: center; }
+
+    .pie { display: flex; flex-wrap: wrap; gap: 8px; }
+    .pie .slice {
+      display: flex; align-items: center; gap: 6px;
+      background: #23262e; border-radius: 20px; padding: 6px 12px; font-size: 12px;
+    }
+    .pie .dot { width: 10px; height: 10px; border-radius: 50%; }
+
+    .limit-form { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
+    .limit-form input {
+      height: 34px; padding: 0 12px; border: 1px solid #3d424e; border-radius: 8px;
+      background: #14161a; color: #e8eaf0; font-size: 13px; outline: none;
+    }
+    #lim-host { flex: 1; min-width: 180px; }
+    #lim-min { width: 110px; }
+    .limit-form button, #clear-all {
+      border: none; background: #2f5a94; color: #fff; font-size: 13px;
+      padding: 8px 16px; border-radius: 8px; cursor: pointer;
+    }
+    #clear-all { background: #6e3030; margin-top: 12px; }
+    .empty { color: #8a90a0; padding: 16px 0; text-align: center; font-size: 13px; }
+  </style>
+</head>
+<body>
+  <h1>📈 मेरी ब्राउज़िंग analytics</h1>
+  <p class="sub">यह पूरा डेटा सिर्फ़ आपके कंप्यूटर पर है — कहीं बाहर नहीं जाता। प्राइवेट टैब कभी रिकॉर्ड नहीं होते।</p>
+
+  <div class="cards">
+    <div class="card"><div class="n" id="c-today">–</div><div class="l">आज स्क्रीन-टाइम</div></div>
+    <div class="card"><div class="n" id="c-week">–</div><div class="l">पिछले 7 दिन</div><div class="d" id="c-week-diff"></div></div>
+    <div class="card"><div class="n" id="c-data">–</div><div class="l">इस हफ़्ते डेटा खपत</div></div>
+    <div class="card"><div class="n" id="c-dl">–</div><div class="l">कुल डाउनलोड</div></div>
+  </div>
+
+  <h2>पिछले 30 दिन (स्क्रीन-टाइम)</h2>
+  <div class="chart" id="days30"></div>
+
+  <h2>किस साइट पर कितना समय — आज</h2>
+  <div class="rows" id="top-today"></div>
+
+  <h2>किस साइट पर कितना समय — 7 दिन</h2>
+  <div class="rows" id="top-week"></div>
+
+  <h2>किस तरह की साइटों पर समय गया (7 दिन)</h2>
+  <div class="pie" id="cats"></div>
+
+  <h2>कब-कब ब्राउज़ करते हैं (28 दिन का पैटर्न)</h2>
+  <div class="heat" id="heat"></div>
+
+  <h2>कौन आपको ट्रैक करने की कोशिश कर रहा था (कंपनी-वार, ब्लॉक हो चुके)</h2>
+  <div class="pie" id="companies"></div>
+  <div class="rows" id="trackers" style="margin-top:10px"></div>
+
+  <h2>सबसे ज़्यादा ऐड/ट्रैकर वाली साइटें</h2>
+  <div class="rows" id="dirty"></div>
+
+  <h2>डेटा खपत — आज (अनुमानित)</h2>
+  <div class="rows" id="data-today"></div>
+
+  <h2>⏰ स्क्रीन-टाइम लिमिट</h2>
+  <div class="rows" id="limits"></div>
+  <div class="limit-form">
+    <input id="lim-host" type="text" placeholder="साइट (जैसे youtube.com)" />
+    <input id="lim-min" type="number" min="1" placeholder="मिनट/दिन" />
+    <button id="lim-add">लिमिट लगाएँ</button>
+  </div>
+  <div class="rows" id="blocked-today" style="margin-top:10px"></div>
+
+  <button id="clear-all">🗑 सारा analytics डेटा मिटाएँ</button>
+
+  <script>
+    const COLORS = ['#6db3ff', '#58c274', '#e8c94f', '#e5655f', '#a05bff', '#4fd0c0', '#d68fb8', '#9aa0ad'];
+    const $ = (id) => document.getElementById(id);
+
+    function fmtTime(sec) {
+      sec = Math.round(sec || 0);
+      if (sec < 60) return sec + ' से.';
+      const m = Math.round(sec / 60);
+      if (m < 60) return m + ' मि.';
+      return Math.floor(m / 60) + ' घं. ' + (m % 60) + ' मि.';
+    }
+    function fmtBytes(b) {
+      if (!b) return '0 MB';
+      const mb = b / (1024 * 1024);
+      return mb >= 1024 ? (mb / 1024).toFixed(1) + ' GB' : Math.max(1, Math.round(mb)) + ' MB';
+    }
+
+    function barRows(el, items, valOf, labelOf, cls, actions) {
+      el.innerHTML = '';
+      if (!items.length) {
+        el.innerHTML = '<div class="empty">अभी कोई डेटा नहीं — ब्राउज़ करते रहिए, यहाँ अपने-आप भरता जाएगा</div>';
+        return;
+      }
+      const max = Math.max(...items.map(valOf), 1);
+      for (const it of items) {
+        const row = document.createElement('div');
+        row.className = 'row ' + (cls || '');
+        const name = document.createElement('span');
+        name.className = 'name';
+        name.textContent = it.host || it.name;
+        const track = document.createElement('div');
+        track.className = 'track';
+        const fill = document.createElement('div');
+        fill.style.width = Math.round((valOf(it) / max) * 100) + '%';
+        track.appendChild(fill);
+        const val = document.createElement('span');
+        val.className = 'val';
+        val.textContent = labelOf(it);
+        row.append(name, track, val);
+        if (actions) actions(row, it);
+        el.appendChild(row);
+      }
+    }
+
+    async function refresh() {
+      const a = await window.tez.list('analytics');
+      if (!a) return;
+
+      $('c-today').textContent = fmtTime(a.todaySec);
+      $('c-week').textContent = fmtTime(a.weekSec);
+      const diff = a.weekSec - a.lastWeekSec;
+      $('c-week-diff').textContent = a.lastWeekSec
+        ? (diff >= 0 ? '▲ ' : '▼ ') + fmtTime(Math.abs(diff)) + ' पिछले हफ़्ते से'
+        : '';
+      $('c-week-diff').className = 'd ' + (diff >= 0 ? 'up' : 'down');
+      $('c-data').textContent = fmtBytes(a.dataWeekTotal);
+      $('c-dl').textContent = a.downloads.count + ' (' + fmtBytes(a.downloads.bytes) + ')';
+
+      const chart = $('days30');
+      chart.innerHTML = '';
+      const maxDay = Math.max(...a.days30.map((d) => d.sec), 1);
+      for (const d of a.days30) {
+        const bar = document.createElement('div');
+        bar.className = 'bar';
+        bar.style.height = Math.round((d.sec / maxDay) * 100) + '%';
+        bar.title = d.day + ': ' + fmtTime(d.sec);
+        chart.appendChild(bar);
+      }
+
+      barRows($('top-today'), a.topToday, (i) => i.sec, (i) => fmtTime(i.sec));
+      barRows($('top-week'), a.topWeek, (i) => i.sec, (i) => fmtTime(i.sec));
+
+      const cats = $('cats');
+      cats.innerHTML = '';
+      const catEntries = Object.entries(a.categories).sort((x, y) => y[1] - x[1]);
+      const catTotal = catEntries.reduce((s, [, v]) => s + v, 0) || 1;
+      catEntries.forEach(([name, sec], i) => {
+        const s = document.createElement('div');
+        s.className = 'slice';
+        const dot = document.createElement('span');
+        dot.className = 'dot';
+        dot.style.background = COLORS[i % COLORS.length];
+        s.appendChild(dot);
+        s.append(name + ' — ' + fmtTime(sec) + ' (' + Math.round((sec / catTotal) * 100) + '%)');
+        cats.appendChild(s);
+      });
+      if (!catEntries.length) cats.innerHTML = '<div class="empty">अभी कोई डेटा नहीं</div>';
+
+      const heat = $('heat');
+      const daysHi = ['रवि', 'सोम', 'मंगल', 'बुध', 'गुरु', 'शुक्र', 'शनि'];
+      let maxCell = 1;
+      a.heatmap.forEach((r) => r.forEach((v) => (maxCell = Math.max(maxCell, v))));
+      let html = '<table><tr><th></th>';
+      for (let h = 0; h < 24; h++) html += '<td class="hlabel">' + (h % 6 === 0 ? h : '') + '</td>';
+      html += '</tr>';
+      a.heatmap.forEach((rowArr, wd) => {
+        html += '<tr><th>' + daysHi[wd] + '</th>';
+        rowArr.forEach((v, h) => {
+          const op = v ? 0.15 + 0.85 * (v / maxCell) : 0;
+          html +=
+            '<td><div class="cell" title="' + daysHi[wd] + ' ' + h + ':00 — ' + fmtTime(v) +
+            '" style="background:' + (v ? 'rgba(77,127,214,' + op.toFixed(2) + ')' : '#2a2e38') + '"></div></td>';
+        });
+        html += '</tr>';
+      });
+      heat.innerHTML = html + '</table>';
+
+      const comp = $('companies');
+      comp.innerHTML = '';
+      a.companies.forEach((c, i) => {
+        const s = document.createElement('div');
+        s.className = 'slice';
+        const dot = document.createElement('span');
+        dot.className = 'dot';
+        dot.style.background = COLORS[i % COLORS.length];
+        s.appendChild(dot);
+        s.append(c.name + ' — ' + c.count.toLocaleString('hi-IN') + ' बार');
+        comp.appendChild(s);
+      });
+      if (!a.companies.length) comp.innerHTML = '<div class="empty">अभी कोई ट्रैकर ब्लॉक नहीं हुआ</div>';
+
+      barRows($('trackers'), a.trackers, (i) => i.count, (i) => i.count.toLocaleString('hi-IN') + ' बार', 't');
+      barRows($('dirty'), a.dirtySites, (i) => i.count, (i) => i.count.toLocaleString('hi-IN') + ' ब्लॉक', 't');
+      barRows($('data-today'), a.dataToday, (i) => i.bytes, (i) => fmtBytes(i.bytes), 'd');
+
+      const lim = $('limits');
+      lim.innerHTML = '';
+      if (!a.limits.length) {
+        lim.innerHTML = '<div class="empty">कोई लिमिट नहीं — नीचे से लगाएँ (जैसे youtube.com पर 60 मिनट/दिन)</div>';
+      }
+      for (const l of a.limits) {
+        const row = document.createElement('div');
+        row.className = 'row';
+        const name = document.createElement('span');
+        name.className = 'name';
+        name.textContent = l.host + ' — ' + l.minutes + ' मि./दिन';
+        const track = document.createElement('div');
+        track.className = 'track';
+        const fill = document.createElement('div');
+        const pct = Math.min(100, Math.round((l.usedSec / (l.minutes * 60)) * 100));
+        fill.style.width = pct + '%';
+        if (pct >= 100) fill.style.background = '#e5655f';
+        track.appendChild(fill);
+        const val = document.createElement('span');
+        val.className = 'val';
+        val.textContent = fmtTime(l.usedSec) + ' (' + pct + '%)';
+        const del = document.createElement('button');
+        del.textContent = 'हटाएँ';
+        del.addEventListener('click', async () => {
+          await window.tez.action('analytics', 'removeLimit', l.host);
+          refresh();
+        });
+        row.append(name, track, val, del);
+        lim.appendChild(row);
+      }
+
+      const blocked = $('blocked-today');
+      blocked.innerHTML = '';
+      for (const h of a.blockedToday) {
+        const row = document.createElement('div');
+        row.className = 'row';
+        const name = document.createElement('span');
+        name.className = 'name';
+        name.textContent = '🚫 आज के लिए ब्लॉक: ' + h;
+        const spacer = document.createElement('div');
+        spacer.className = 'track';
+        spacer.style.visibility = 'hidden';
+        const un = document.createElement('button');
+        un.textContent = 'अनब्लॉक';
+        un.addEventListener('click', async () => {
+          await window.tez.action('analytics', 'unblock', h);
+          refresh();
+        });
+        row.append(name, spacer, un);
+        blocked.appendChild(row);
+      }
+    }
+
+    $('lim-add').addEventListener('click', async () => {
+      const host = $('lim-host').value.trim();
+      const minutes = $('lim-min').value;
+      if (!host || !minutes) return;
+      await window.tez.action('analytics', 'setLimit', { host, minutes });
+      $('lim-host').value = '';
+      $('lim-min').value = '';
+      refresh();
+    });
+
+    $('clear-all').addEventListener('click', async () => {
+      if (confirm('सारा analytics डेटा (समय, ग्राफ़, ट्रैकर, डेटा खपत) मिटा दें? लिमिट सेटिंग्स बनी रहेंगी।')) {
+        await window.tez.action('analytics', 'clearAll');
+        refresh();
+      }
+    });
+
+    refresh();
+    setInterval(refresh, 15000);
+  </script>
+</body>
+</html>
