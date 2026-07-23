@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="hi">
+<head>
+  <meta charset="UTF-8" />
+  <title>ऐड-ब्लॉक आँकड़े</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: "Segoe UI", system-ui, sans-serif;
+      background: #1b1d23;
+      color: #e8eaf0;
+      padding: 32px 24px;
+      max-width: 860px;
+      margin: 0 auto;
+    }
+    h1 { font-size: 22px; margin-bottom: 20px; }
+    h2 { font-size: 16px; margin: 28px 0 10px 0; }
+    .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 12px; }
+    .card {
+      background: #23262e;
+      border-radius: 12px;
+      padding: 18px;
+      text-align: center;
+    }
+    .card .n { font-size: 30px; font-weight: 600; color: #8fd694; }
+    .card .l { font-size: 12px; color: #8a90a0; margin-top: 6px; }
+    .chart {
+      display: flex;
+      align-items: flex-end;
+      gap: 4px;
+      height: 120px;
+      background: #23262e;
+      border-radius: 12px;
+      padding: 14px;
+      margin-top: 12px;
+    }
+    .chart .bar {
+      flex: 1;
+      background: #4d7fd6;
+      border-radius: 3px 3px 0 0;
+      min-height: 2px;
+    }
+    .chart .bar:hover { background: #6db3ff; }
+    textarea {
+      width: 100%;
+      height: 140px;
+      background: #14161a;
+      color: #e8eaf0;
+      border: 1px solid #3d424e;
+      border-radius: 10px;
+      padding: 12px;
+      font-family: Consolas, monospace;
+      font-size: 12px;
+      outline: none;
+      resize: vertical;
+    }
+    .hint { font-size: 12px; color: #8a90a0; margin: 8px 0; }
+    button {
+      border: none;
+      background: #2f5a94;
+      color: #fff;
+      font-size: 13px;
+      padding: 9px 18px;
+      border-radius: 8px;
+      cursor: pointer;
+      margin-top: 8px;
+    }
+    button:hover { background: #3a6cb0; }
+    #saved { color: #8fd694; font-size: 13px; margin-left: 10px; }
+  </style>
+</head>
+<body>
+  <h1>📊 ऐड-ब्लॉक आँकड़े</h1>
+  <div class="cards">
+    <div class="card"><div class="n" id="today">0</div><div class="l">आज ब्लॉक हुए</div></div>
+    <div class="card"><div class="n" id="week">0</div><div class="l">पिछले 7 दिन</div></div>
+    <div class="card"><div class="n" id="total">0</div><div class="l">कुल (अब तक)</div></div>
+    <div class="card"><div class="n" id="saved-mb">0 MB</div><div class="l">अनुमानित डेटा बचत</div></div>
+  </div>
+  <h2>पिछले 30 दिन</h2>
+  <div class="chart" id="chart"></div>
+  <h2>अपनी कस्टम फ़िल्टर लिस्ट</h2>
+  <p class="hint">
+    हर लाइन पर एक फ़िल्टर (uBlock/Adblock जैसा सिंटैक्स) — जैसे: <code>||ads.example.com^</code>
+    &nbsp;या किसी साइट के तत्व छिपाने के लिए <code>example.com##.ad-box</code>। "!" से शुरू लाइनें टिप्पणी मानी जाती हैं।
+  </p>
+  <textarea id="filters" spellcheck="false" placeholder="||ads.example.com^"></textarea>
+  <div><button id="save">सेव करें</button><span id="saved"></span></div>
+  <script>
+    async function refresh() {
+      const s = await window.tez.list('stats');
+      if (!s) return;
+      document.getElementById('today').textContent = s.today.toLocaleString('hi-IN');
+      document.getElementById('week').textContent = s.week.toLocaleString('hi-IN');
+      document.getElementById('total').textContent = s.total.toLocaleString('hi-IN');
+      document.getElementById('saved-mb').textContent =
+        s.savedMB >= 1024 ? (s.savedMB / 1024).toFixed(1) + ' GB' : s.savedMB + ' MB';
+      if (document.activeElement !== document.getElementById('filters')) {
+        document.getElementById('filters').value = s.customFilters || '';
+      }
+      const chart = document.getElementById('chart');
+      chart.innerHTML = '';
+      const days = [];
+      const now = new Date();
+      for (let i = 29; i >= 0; i--) {
+        const d = new Date(now.getTime() - i * 24 * 3600 * 1000).toISOString().slice(0, 10);
+        days.push([d, s.days[d] || 0]);
+      }
+      const max = Math.max(1, ...days.map(([, n]) => n));
+      for (const [d, n] of days) {
+        const bar = document.createElement('div');
+        bar.className = 'bar';
+        bar.style.height = Math.round((n / max) * 100) + '%';
+        bar.title = d + ': ' + n + ' ब्लॉक';
+        chart.appendChild(bar);
+      }
+    }
+    document.getElementById('save').addEventListener('click', async () => {
+      const ok = await window.tez.action('stats', 'setFilters', document.getElementById('filters').value);
+      document.getElementById('saved').textContent = ok ? 'सेव हो गया ✔' : 'कुछ फ़िल्टर ग़लत हैं';
+      setTimeout(() => (document.getElementById('saved').textContent = ''), 3000);
+    });
+    refresh();
+    setInterval(refresh, 5000);
+  </script>
+</body>
+</html>

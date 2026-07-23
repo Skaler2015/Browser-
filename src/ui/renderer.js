@@ -35,6 +35,7 @@ function updateChromeHeight() {
 // ---------------------------------------------------------------------------
 function render(state) {
   currentState = state;
+  document.documentElement.dataset.theme = state.theme || 'dark';
   tabstrip.innerHTML = '';
 
   for (const tab of state.tabs) {
@@ -44,7 +45,9 @@ function render(state) {
       (tab.id === state.activeTabId ? ' active' : '') +
       (tab.isPrivate ? ' private' : '') +
       (tab.pinned ? ' pinned' : '') +
-      (tab.asleep ? ' asleep' : '');
+      (tab.asleep ? ' asleep' : '') +
+      (tab.id === state.splitTabId ? ' split' : '') +
+      (tab.color ? ' c-' + tab.color : '');
     el.title = tab.title;
     el.draggable = true;
     el.addEventListener('click', () => window.browser.activateTab(tab.id));
@@ -263,6 +266,7 @@ keepAliveBtn.addEventListener('click', () => {
 });
 starBtn.addEventListener('click', () => window.browser.toggleBookmark());
 readerBtn.addEventListener('click', () => window.browser.openReader());
+document.getElementById('pip').addEventListener('click', () => window.browser.togglePiP());
 shieldBtn.addEventListener('click', () => window.browser.toggleShield());
 downloadsBtn.addEventListener('click', () => window.browser.openInternal('downloads'));
 menuBtn.addEventListener('click', () => {

@@ -17,6 +17,7 @@ contextBridge.exposeInMainWorld('browser', {
   toggleBookmark: () => ipcRenderer.send('bookmark:toggle'),
   toggleShield: () => ipcRenderer.send('shield:toggle'),
   openReader: () => ipcRenderer.send('reader:open'),
+  togglePiP: () => ipcRenderer.send('pip:toggle'),
   openInternal: (name) => ipcRenderer.send('internal:open', name),
   openMenu: (x, y) => ipcRenderer.send('ui:menu', { x, y }),
   setChromeHeight: (h) => ipcRenderer.send('ui:chrome-height', h),
