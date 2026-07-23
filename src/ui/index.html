@@ -99,6 +99,16 @@
     .tab.active { background: var(--tab-active); }
     .tab.private { background: #2c2440; }
     .tab.private.active { background: #3a2f55; }
+    .tab.identity { background: #143036; }
+    .tab.identity.active { background: #1c454e; }
+    .tab .idbadge {
+      flex-shrink: 0;
+      font-size: 9px;
+      background: #1c8a9e;
+      color: #fff;
+      border-radius: 8px;
+      padding: 1px 5px;
+    }
     .tab.asleep .title { opacity: 0.45; }
     .tab.split { outline: 1px dashed var(--accent); outline-offset: -2px; }
     .tab.c-red { border-top-color: #e5655f; }
@@ -292,6 +302,18 @@
       cursor: pointer;
     }
     #findbar button:hover { background: var(--hover); }
+
+    #mic.listening { background: #6e3030; color: #fff; animation: pulse 1s infinite; }
+    @keyframes pulse { 50% { opacity: 0.5; } }
+
+    /* ---- simple mode: bigger everything, calmer ---- */
+    body.simple #navbar { height: 60px; gap: 8px; }
+    body.simple #navbar button { width: 44px; height: 44px; font-size: 20px; }
+    body.simple #address { height: 44px; font-size: 17px; border-radius: 22px; }
+    body.simple .tab { height: 40px; min-width: 150px; }
+    body.simple .tab .title { font-size: 14px; }
+    body.simple #tabstrip { height: 46px; }
+    body.simple #shield { height: 44px; font-size: 15px; }
   </style>
 </head>
 <body>
@@ -302,9 +324,10 @@
     <button id="reload" title="रीलोड">&#8635;</button>
     <div id="addresswrap">
       <input id="address" type="text" spellcheck="false"
-             placeholder="सर्च करें या वेब एड्रेस लिखें…" autocomplete="off" />
+             placeholder="सर्च करें, पता लिखें, या हिंदी में कहें — जैसे: यूट्यूब खोलो" autocomplete="off" />
       <div id="suggest"></div>
     </div>
+    <button id="mic" title="बोलकर चलाएँ — जैसे &quot;यूट्यूब खोलो&quot;, &quot;यह पेज पढ़कर सुनाओ&quot;">🎤</button>
     <button id="star" title="बुकमार्क (Ctrl+D)">☆</button>
     <button id="reader" title="रीडर मोड — सिर्फ़ आर्टिकल पढ़ें">📖</button>
     <button id="pip" title="पिक्चर-इन-पिक्चर — वीडियो छोटी विंडो में">🎦</button>

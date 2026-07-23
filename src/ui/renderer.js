@@ -36,6 +36,7 @@ function updateChromeHeight() {
 function render(state) {
   currentState = state;
   document.documentElement.dataset.theme = state.theme || 'dark';
+  document.body.classList.toggle('simple', !!state.simpleMode);
   tabstrip.innerHTML = '';
 
   for (const tab of state.tabs) {
@@ -44,6 +45,7 @@ function render(state) {
       'tab' +
       (tab.id === state.activeTabId ? ' active' : '') +
       (tab.isPrivate ? ' private' : '') +
+      (tab.identity ? ' identity' : '') +
       (tab.pinned ? ' pinned' : '') +
       (tab.asleep ? ' asleep' : '') +
       (tab.id === state.splitTabId ? ' split' : '') +
@@ -90,6 +92,14 @@ function render(state) {
       dot.textContent = tab.isPrivate ? '🕶' : tab.asleep ? '💤' : '📍';
       dot.style.fontSize = '13px';
       el.appendChild(dot);
+    }
+
+    if (!tab.pinned && tab.identity) {
+      const badge = document.createElement('span');
+      badge.className = 'idbadge';
+      badge.textContent = '👥' + tab.identity;
+      badge.title = 'अलग पहचान — इसका लॉगिन बाकी टैबों से अलग है';
+      el.appendChild(badge);
     }
 
     if (!tab.pinned) {
@@ -317,3 +327,47 @@ document.getElementById('findprev').addEventListener('click', () => {
   if (t) window.browser.findNext(t, false);
 });
 document.getElementById('findclose').addEventListener('click', closeFind);
+
+// ---------------------------------------------------------------------------
+// Voice: speak a command like "यूट्यूब खोलो" — routed through nav:go (which
+// parses commands). Uses the browser's built-in speech recognition.
+// ---------------------------------------------------------------------------
+const micBtn = document.getElementById('mic');
+const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+if (!SR) {
+  micBtn.style.display = 'none';
+} else {
+  let rec = null;
+  let listening = false;
+  micBtn.addEventListener('click', () => {
+    if (listening) {
+      if (rec) rec.stop();
+      return;
+    }
+    rec = new SR();
+    rec.lang = 'hi-IN';
+    rec.interimResults = false;
+    rec.maxAlternatives = 1;
+    rec.onstart = () => {
+      listening = true;
+      micBtn.classList.add('listening');
+      address.placeholder = '🎤 सुन रहा हूँ… बोलिए';
+    };
+    rec.onerror = () => {};
+    rec.onend = () => {
+      listening = false;
+      micBtn.classList.remove('listening');
+      address.placeholder = 'सर्च करें, पता लिखें, या हिंदी में कहें — जैसे: यूट्यूब खोलो';
+    };
+    rec.onresult = (e) => {
+      const said = e.results[0][0].transcript;
+      if (said && said.trim()) window.browser.navigate(said.trim());
+    };
+    try {
+      rec.start();
+    } catch (err) {
+      listening = false;
+      micBtn.classList.remove('listening');
+    }
+  });
+}

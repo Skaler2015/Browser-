@@ -79,6 +79,9 @@ const settings = Object.assign(
     theme: 'dark',
     customFilters: '',
     timeLimits: {}, // host -> minutes per day
+    simpleMode: false, // बड़े-बुज़ुर्ग मोड
+    scamProtection: true, // भारत-केंद्रित ठगी चेतावनी
+    dataPackRate: 15, // ₹ per GB, for the money-saved meter
   },
   store.load('settings', {})
 );
@@ -123,6 +126,7 @@ const INTERNAL_PAGES = {
   reader: 'reader.html',
   stats: 'stats.html',
   analytics: 'analytics.html',
+  timemachine: 'timemachine.html',
 };
 const INTERNAL_PRELOAD = path.join(__dirname, 'internal-preload.js');
 const HISTORY_LIMIT = 5000;
@@ -134,6 +138,8 @@ let privateSession = null;
 let activeTabId = null;
 let splitTabId = null; // tab shown in the right half of split view
 let nextTabId = 1;
+let nextIdentity = 1; // counter for double-account (isolated) tab partitions
+const wiredPartitions = new Set(); // partitions already given preloads/downloads/adblock
 const tabs = new Map(); // id -> tab object
 let tabOrder = []; // tab ids in display order (pinned first)
 const closedTabs = []; // urls of recently closed tabs (this run only)
@@ -164,6 +170,9 @@ const analytics = Object.assign(
 const downloads = []; // [{id, filename, savePath, url, state, received, total, ts}]
 const downloadItems = new Map(); // id -> DownloadItem
 let nextDownloadId = 1;
+
+// Time-machine: hourly local snapshots of open (non-private) tabs
+const timeMachine = store.load('timemachine', []); // [{ts, urls:[...]}]
 
 // ---------------------------------------------------------------------------
 // URL helpers
@@ -259,6 +268,89 @@ function maybeDangerous(url) {
   }
 }
 
+// India-centric scam heuristics: look-alike bank/govt/KYC/lottery domains.
+// Returns a { host, reason, real? } warning, or null.
+const TRUSTED_BRANDS = [
+  { key: 'sbi', real: 'onlinesbi.sbi', words: ['sbi', 'statebank'] },
+  { key: 'hdfc', real: 'hdfcbank.com', words: ['hdfc'] },
+  { key: 'icici', real: 'icicibank.com', words: ['icici'] },
+  { key: 'axis', real: 'axisbank.com', words: ['axisbank'] },
+  { key: 'pnb', real: 'pnbindia.in', words: ['pnb', 'punjabnational'] },
+  { key: 'kotak', real: 'kotak.com', words: ['kotak'] },
+  { key: 'paytm', real: 'paytm.com', words: ['paytm'] },
+  { key: 'phonepe', real: 'phonepe.com', words: ['phonepe'] },
+  { key: 'gpay', real: 'pay.google.com', words: ['googlepay', 'gpayindia'] },
+  { key: 'aadhaar', real: 'uidai.gov.in', words: ['aadhaar', 'aadhar', 'uidai'] },
+  { key: 'incometax', real: 'incometax.gov.in', words: ['incometax', 'itdepartment'] },
+  { key: 'epfo', real: 'epfindia.gov.in', words: ['epfo', 'pfindia'] },
+];
+const SCAM_WORDS = ['kyc', 'lottery', 'lucky-draw', 'luckydraw', 'winner', 'prize', 'refund', 'reward', 'verify-account', 'account-blocked', 'update-pan'];
+
+function scamCheck(url) {
+  if (!settings.scamProtection) return null;
+  let host, full;
+  try {
+    const u = new URL(url);
+    if (!/^https?:$/.test(u.protocol)) return null;
+    host = u.hostname.toLowerCase().replace(/^www\./, '');
+    full = host + u.pathname.toLowerCase();
+  } catch {
+    return null;
+  }
+  if (dangerAllowed.has(host)) return null;
+
+  // 1) look-alike of a trusted brand but NOT its real domain
+  for (const b of TRUSTED_BRANDS) {
+    if (b.words.some((w) => host.includes(w))) {
+      const realHost = b.real;
+      if (host === realHost || host.endsWith('.' + realHost)) return null; // genuine
+      return {
+        host,
+        real: realHost,
+        reason: 'यह ' + b.key.toUpperCase() + ' जैसी दिखती है पर इसकी असली साइट नहीं है।',
+      };
+    }
+  }
+  // 2) scam-word domains on suspicious TLDs / IP hosts
+  const badTld = /\.(xyz|top|club|online|site|live|buzz|click|shop|fun|cyou|rest)$/.test(host);
+  const isIp = /^\d{1,3}(\.\d{1,3}){3}$/.test(host);
+  if (SCAM_WORDS.some((w) => full.includes(w)) && (badTld || isIp)) {
+    return { host, reason: 'इस पते में ठगी वाले शब्द और संदिग्ध पता है (KYC/लॉटरी/रिफ़ंड जैसी ठगी)।' };
+  }
+  return null;
+}
+
+async function confirmScam(info) {
+  const detail =
+    info.reason +
+    (info.real ? '\n\nअसली और सुरक्षित साइट: ' + info.real : '') +
+    '\n\nबैंक/सरकार कभी फ़ोन/लिंक पर OTP, PIN, या पासवर्ड नहीं माँगते। सोच-समझकर आगे बढ़ें।';
+  const buttons = info.real
+    ? ['🔙 वापस रहें', '✅ असली साइट (' + info.real + ') खोलें', 'फिर भी यही खोलें (जोखिम)']
+    : ['🔙 वापस रहें (सुरक्षित)', 'फिर भी खोलें (जोखिम)'];
+  const { response } = await dialog.showMessageBox(win, {
+    type: 'warning',
+    buttons,
+    defaultId: 0,
+    cancelId: 0,
+    message: '⚠️ सावधान — संभावित ठगी वाली साइट',
+    detail,
+  });
+  if (info.real) {
+    if (response === 1) return { action: 'real', url: 'https://' + info.real };
+    if (response === 2) {
+      dangerAllowed.add(info.host);
+      return { action: 'proceed' };
+    }
+    return { action: 'back' };
+  }
+  if (response === 1) {
+    dangerAllowed.add(info.host);
+    return { action: 'proceed' };
+  }
+  return { action: 'back' };
+}
+
 async function confirmDanger(host) {
   const { response } = await dialog.showMessageBox(win, {
     type: 'error',
@@ -276,20 +368,29 @@ async function confirmDanger(host) {
   return false;
 }
 
-// Load a URL only after the malware and screen-time checks pass.
+// Load a URL only after the screen-time, malware and scam checks pass.
 function guardedLoad(wc, url) {
   if (isLimitBlocked(url)) {
     wc.loadURL(START_PAGE);
     return;
   }
   const host = maybeDangerous(url);
-  if (!host) {
-    wc.loadURL(url);
+  if (host) {
+    confirmDanger(host).then((ok) => {
+      if (ok && !wc.isDestroyed()) wc.loadURL(url);
+    });
     return;
   }
-  confirmDanger(host).then((ok) => {
-    if (ok && !wc.isDestroyed()) wc.loadURL(url);
-  });
+  const scam = scamCheck(url);
+  if (scam) {
+    confirmScam(scam).then((r) => {
+      if (wc.isDestroyed()) return;
+      if (r.action === 'proceed') wc.loadURL(url);
+      else if (r.action === 'real') wc.loadURL(r.url);
+    });
+    return;
+  }
+  wc.loadURL(url);
 }
 
 // ---------------------------------------------------------------------------
@@ -475,9 +576,21 @@ function getPrivateSession() {
   if (!privateSession) {
     privateSession = session.fromPartition('tez-private'); // in-memory, wiped on exit
     wireSession(privateSession);
+    wireDataUsage(privateSession); // note: private data usage is dropped inside wireDataUsage
     if (blocker && settings.adblockEnabled) blocker.enableBlockingInSession(privateSession);
   }
   return privateSession;
+}
+
+// Double-account tabs: each identity keeps its own persistent cookies/logins,
+// so two accounts of the same site can be open side by side.
+function prepareIdentitySession(partition) {
+  if (wiredPartitions.has(partition)) return;
+  wiredPartitions.add(partition);
+  const ses = session.fromPartition(partition); // persist: -> survives restarts
+  wireSession(ses);
+  wireDataUsage(ses);
+  if (blocker && settings.adblockEnabled) blocker.enableBlockingInSession(ses);
 }
 
 // ---------------------------------------------------------------------------
@@ -675,6 +788,7 @@ function wireDataUsage(ses) {
       let host = '';
       for (const t of tabs.values()) {
         if (t.view.webContents.id === details.webContentsId) {
+          if (t.isPrivate) return; // private tabs are never recorded
           host = hostOf(tabURL(t));
           break;
         }
@@ -1083,8 +1197,14 @@ function pinnedCount() {
 }
 
 function createTab(url = START_PAGE, opts = {}) {
-  const { activate = true, isPrivate = false, pinned = false, color = null } = opts;
+  const { activate = true, isPrivate = false, pinned = false, color = null, identity = null } = opts;
   if (isPrivate) getPrivateSession();
+  let partition;
+  if (isPrivate) partition = 'tez-private';
+  else if (identity) {
+    partition = 'persist:tez-id-' + identity;
+    prepareIdentitySession(partition);
+  }
   const id = nextTabId++;
   const view = new WebContentsView({
     webPreferences: {
@@ -1093,7 +1213,7 @@ function createTab(url = START_PAGE, opts = {}) {
       nodeIntegration: false,
       backgroundThrottling: false, // background tabs keep running -> sessions stay alive
       images: !settings.dataSaver, // data saver: skip images in tabs opened while on
-      partition: isPrivate ? 'tez-private' : undefined,
+      partition,
       preload: adblockerPreload(), // cosmetic filtering (hides leftover ad frames)
     },
   });
@@ -1104,6 +1224,7 @@ function createTab(url = START_PAGE, opts = {}) {
     blocked: 0,
     keepAlive: false,
     isPrivate,
+    identity,
     pinned,
     color,
     muted: false,
@@ -1122,11 +1243,11 @@ function createTab(url = START_PAGE, opts = {}) {
 
   const wc = view.webContents;
   wc.setWindowOpenHandler(({ url: target }) => {
-    if (maybeDangerous(target)) {
-      const t = createTab(START_PAGE, { isPrivate });
+    if (maybeDangerous(target) || scamCheck(target)) {
+      const t = createTab(START_PAGE, { isPrivate, identity });
       guardedLoad(t.view.webContents, target);
     } else {
-      createTab(target, { isPrivate }); // popups open as tabs, never as popup windows
+      createTab(target, { isPrivate, identity }); // popups open as tabs, keep the identity
     }
     return { action: 'deny' };
   });
@@ -1191,6 +1312,16 @@ function createTab(url = START_PAGE, opts = {}) {
       e.preventDefault();
       confirmDanger(dangerHost).then((ok) => {
         if (ok && !wc.isDestroyed()) wc.loadURL(target);
+      });
+      return;
+    }
+    const scam = scamCheck(target);
+    if (scam) {
+      e.preventDefault();
+      confirmScam(scam).then((r) => {
+        if (wc.isDestroyed()) return;
+        if (r.action === 'proceed') wc.loadURL(target);
+        else if (r.action === 'real') wc.loadURL(r.url);
       });
       return;
     }
@@ -1367,7 +1498,7 @@ function saveSession() {
     .filter((t) => t && !t.isPrivate && !t.view.webContents.isDestroyed());
   if (list.length === 0) return;
   const entries = list
-    .map((t) => ({ url: tabURL(t), pinned: !!t.pinned, color: t.color || null }))
+    .map((t) => ({ url: tabURL(t), pinned: !!t.pinned, color: t.color || null, identity: t.identity || null }))
     .filter(
       (e) => /^https?:\/\//.test(e.url) || e.url === START_PAGE || e.url.startsWith(PAGES_PREFIX)
     );
@@ -1394,14 +1525,18 @@ function restoreSession() {
     return;
   }
   let activeTabRef = null;
+  let maxId = 0;
   entries.forEach((entry, i) => {
+    if (entry.identity) maxId = Math.max(maxId, Number(entry.identity) || 0);
     const tab = createTab(entry.url, {
       activate: false,
       pinned: !!entry.pinned,
       color: entry.color || null,
+      identity: entry.identity || null,
     });
     if (i === saved.active) activeTabRef = tab;
   });
+  if (maxId >= nextIdentity) nextIdentity = maxId + 1;
   activateTab((activeTabRef || tabs.get(tabOrder[0])).id);
 }
 
@@ -1416,6 +1551,7 @@ function sendState() {
     activeTabId,
     splitTabId,
     theme: settings.theme,
+    simpleMode: settings.simpleMode,
     adblockEnabled: settings.adblockEnabled,
     activeWhitelisted: whitelist.has(hostOf(activeURL)),
     activeIsBookmarked: isBookmarked(activeURL),
@@ -1435,6 +1571,7 @@ function sendState() {
           blocked: t.blocked,
           keepAlive: t.keepAlive,
           isPrivate: t.isPrivate,
+          identity: t.identity,
           pinned: t.pinned,
           color: t.color,
           audible: t.audible,
@@ -1681,7 +1818,13 @@ function showTabContextMenu(id) {
       click: () => setSplitTab(id),
     },
     { label: '↻ रीलोड', click: () => tabs.has(id) && tabs.get(id).view.webContents.reload() },
-    { label: '⧉ डुप्लिकेट', click: () => createTab(tabURL(tab), { isPrivate: tab.isPrivate }) },
+    { label: '⧉ डुप्लिकेट', click: () => createTab(tabURL(tab), { isPrivate: tab.isPrivate, identity: tab.identity }) },
+    { type: 'separator' },
+    {
+      label: '👥 इसी साइट को अलग पहचान से खोलें (दूसरा अकाउंट)',
+      click: () => createTab(tabURL(tab), { identity: nextIdentity++ }),
+    },
+    { label: '➕ नई पहचान वाला खाली टैब', click: () => createTab(START_PAGE, { identity: nextIdentity++ }) },
     { type: 'separator' },
     { label: 'बाकी सब टैब बंद करें', click: () => closeOtherTabs(id) },
     { label: 'टैब बंद करें', click: () => closeTab(id) },
@@ -1706,10 +1849,114 @@ ipcMain.on('tab:activate', (_e, id) => activateTab(id));
 ipcMain.on('tab:mute', (_e, id) => toggleMute(id));
 ipcMain.on('tab:context', (_e, id) => showTabContextMenu(id));
 ipcMain.on('tab:reorder', (_e, { id, targetId }) => reorderTab(id, targetId));
+// Hindi (and English) natural-language commands typed or spoken into the bar.
+// Returns true if handled as a command, false if it should be treated as a URL/search.
+const SITE_WORDS = {
+  'यूट्यूब': 'https://www.youtube.com',
+  'youtube': 'https://www.youtube.com',
+  'यूट्युब': 'https://www.youtube.com',
+  'गूगल': 'https://www.google.com',
+  'google': 'https://www.google.com',
+  'फेसबुक': 'https://www.facebook.com',
+  'facebook': 'https://www.facebook.com',
+  'व्हाट्सएप': 'https://web.whatsapp.com',
+  'whatsapp': 'https://web.whatsapp.com',
+  'व्हाट्सऐप': 'https://web.whatsapp.com',
+  'जीमेल': 'https://mail.google.com',
+  'gmail': 'https://mail.google.com',
+  'इंस्टाग्राम': 'https://www.instagram.com',
+  'instagram': 'https://www.instagram.com',
+  'विकिपीडिया': 'https://www.wikipedia.org',
+  'wikipedia': 'https://www.wikipedia.org',
+  'अमेज़न': 'https://www.amazon.in',
+  'amazon': 'https://www.amazon.in',
+  'फ्लिपकार्ट': 'https://www.flipkart.com',
+  'flipkart': 'https://www.flipkart.com',
+};
+
+function handleCommand(raw) {
+  const text = raw.trim();
+  const t = text.toLowerCase();
+  const has = (...w) => w.some((x) => t.includes(x));
+
+  // actions on the current page / browser
+  if (has('पढ़कर सुनाओ', 'पढ़कर सुना', 'सुनाओ', 'read aloud')) return runInActiveTab(TTS_SNIPPET), true;
+  if (has('अनुवाद', 'हिंदी में करो', 'translate')) return translateActivePage(), true;
+  if (has('रीडर', 'reader')) return openReader(), true;
+  if (has('पीडीएफ', 'pdf बना', 'pdf banao')) return savePageAsPDF(), true;
+  if (has('स्क्रीनशॉट', 'screenshot')) return fullPageScreenshot(), true;
+  if (has('सारे टैब बंद', 'सब टैब बंद', 'close all tab')) {
+    for (const tid of [...tabOrder]) {
+      const tt = tabs.get(tid);
+      if (tt && !tt.pinned && tid !== activeTabId) closeTab(tid);
+    }
+    return true;
+  }
+  if (has('यह टैब बंद', 'टैब बंद करो', 'close tab')) return closeTab(activeTabId), true;
+  if (has('नया टैब', 'new tab')) return createTab(), true;
+  if (has('प्राइवेट', 'private', 'incognito', 'गुप्त')) return createTab(START_PAGE, { isPrivate: true }), true;
+  if (has('बुकमार्क', 'bookmark')) return toggleBookmark(), true;
+  if (has('इतिहास', 'हिस्ट्री', 'history')) return createTab(internalURL('history')), true;
+  if (has('डाउनलोड', 'download')) return createTab(internalURL('downloads')), true;
+  if (has('रिफ्रेश', 'रीलोड', 'reload', 'refresh')) return navReload(), true;
+  if (has('पीछे', 'back', 'वापस जाओ')) return navBack(), true;
+  if (has('आगे', 'forward')) return navForward(), true;
+
+  // "X खोलो / X दिखाओ / open X"
+  const openMatch = t.match(/^(?:(.+?)\s*(?:खोलो|खोल दो|दिखाओ|चलाओ|open)|open\s+(.+))$/);
+  if (openMatch) {
+    const namePart = (openMatch[1] || openMatch[2] || '').trim();
+    for (const [word, url] of Object.entries(SITE_WORDS)) {
+      if (namePart.includes(word)) {
+        const tab = activeTab();
+        if (tab) {
+          tab.asleep = false;
+          guardedLoad(tab.view.webContents, url);
+        }
+        return true;
+      }
+    }
+    // "<कुछ> खोलो" जहाँ <कुछ> कोई साइट/डोमेन है
+    const asUrl = toURL(namePart);
+    if (namePart && !namePart.includes(' ')) {
+      const tab = activeTab();
+      if (tab && asUrl) {
+        tab.asleep = false;
+        guardedLoad(tab.view.webContents, asUrl);
+      }
+      return true;
+    }
+    // वरना उसे सर्च कर दो
+    const tab = activeTab();
+    if (tab) {
+      tab.asleep = false;
+      guardedLoad(tab.view.webContents, engine().search + encodeURIComponent(namePart));
+    }
+    return true;
+  }
+
+  // bare site word ("यूट्यूब")
+  for (const [word, url] of Object.entries(SITE_WORDS)) {
+    if (t === word) {
+      const tab = activeTab();
+      if (tab) {
+        tab.asleep = false;
+        guardedLoad(tab.view.webContents, url);
+      }
+      return true;
+    }
+  }
+  return false;
+}
+
 ipcMain.on('nav:go', (_e, input) => {
-  const url = toURL(input);
   const tab = activeTab();
-  if (url && tab) {
+  if (!tab) return;
+  // Multi-word input that isn't an obvious URL -> try a command first.
+  const looksLikeUrl = /^[a-z]+:\/\//i.test(input.trim()) || (!input.includes(' ') && input.includes('.'));
+  if (!looksLikeUrl && handleCommand(input)) return;
+  const url = toURL(input);
+  if (url) {
     tab.asleep = false;
     guardedLoad(tab.view.webContents, url);
   }
@@ -1777,16 +2024,49 @@ function statsSummary() {
   for (const [day, n] of Object.entries(stats.days)) {
     if (now - new Date(day + 'T00:00:00Z').getTime() < 7 * 24 * 3600 * 1000) week += n;
   }
+  const savedMB = Math.round((stats.total * 50) / 1024);
   return {
     total: stats.total,
     today: stats.days[today] || 0,
     week,
     days: stats.days,
     // rough estimate: an average blocked request weighs ~50 KB
-    savedMB: Math.round((stats.total * 50) / 1024),
+    savedMB,
+    // money saved: data cost + a small time value (~0.4s per blocked ad)
+    savedRupees: Math.round((savedMB / 1024) * (settings.dataPackRate || 15)),
+    savedMinutes: Math.round((stats.total * 0.4) / 60),
+    dataPackRate: settings.dataPackRate || 15,
     customFilters: settings.customFilters,
   };
 }
+
+// ---------------------------------------------------------------------------
+// Time-machine: snapshot open tabs hourly, restore a past session by time
+// ---------------------------------------------------------------------------
+function snapshotTabs() {
+  const urls = tabOrder
+    .map((id) => tabs.get(id))
+    .filter((t) => t && !t.isPrivate)
+    .map((t) => tabURL(t))
+    .filter((u) => /^https?:\/\//.test(u));
+  if (!urls.length) return;
+  const last = timeMachine[timeMachine.length - 1];
+  // skip if identical to the previous snapshot
+  if (last && last.urls.join('\n') === urls.join('\n')) return;
+  timeMachine.push({ ts: Date.now(), urls });
+  // keep ~14 days of hourly snapshots
+  while (timeMachine.length > 24 * 14) timeMachine.shift();
+  store.save('timemachine', timeMachine);
+}
+
+function restoreSnapshot(ts) {
+  const snap = timeMachine.find((s) => s.ts === ts);
+  if (!snap) return;
+  for (const url of snap.urls) createTab(url, { activate: false });
+  sendState();
+}
+
+setInterval(snapshotTabs, 60 * 60 * 1000); // hourly
 
 ipcMain.handle('tez:list', (event, kind) => {
   if (!isInternalSender(event)) return null;
@@ -1798,6 +2078,12 @@ ipcMain.handle('tez:list', (event, kind) => {
   if (kind === 'reader') return readerContent;
   if (kind === 'stats') return statsSummary();
   if (kind === 'analytics') return analyticsSummary();
+  if (kind === 'timemachine') {
+    return timeMachine
+      .slice()
+      .reverse()
+      .map((s) => ({ ts: s.ts, count: s.urls.length, urls: s.urls.slice(0, 12) }));
+  }
   return null;
 });
 
@@ -1832,6 +2118,16 @@ ipcMain.handle('tez:action', (event, { kind, action, payload }) => {
   }
   if (kind === 'stats') {
     if (action === 'setFilters') return setCustomFilters(payload);
+  }
+  if (kind === 'timemachine') {
+    if (action === 'restore') {
+      restoreSnapshot(payload);
+      return true;
+    }
+    if (action === 'openOne' && /^https?:\/\//.test(payload)) {
+      createTab(payload);
+      return true;
+    }
   }
   if (kind === 'analytics') {
     if (action === 'setLimit' && payload && payload.host) {
@@ -1994,6 +2290,7 @@ function menuTemplate() {
         { label: 'डाउनलोड', accelerator: 'CmdOrCtrl+J', click: () => createTab(internalURL('downloads')) },
         { label: '📊 ऐड-ब्लॉक आँकड़े', click: () => createTab(internalURL('stats')) },
         { label: '📈 मेरी ब्राउज़िंग analytics', click: () => createTab(internalURL('analytics')) },
+        { label: '⏮ टाइम-मशीन (पुराने टैब वापस)', click: () => createTab(internalURL('timemachine')) },
         { type: 'separator' },
         { label: '📥 Chrome/Edge से बुकमार्क इम्पोर्ट…', click: importBookmarks },
         { label: '📤 बुकमार्क एक्सपोर्ट (HTML)…', click: exportBookmarks },
@@ -2015,6 +2312,25 @@ function menuTemplate() {
           click: (item) => {
             settings.httpsOnly = item.checked;
             saveSettings();
+          },
+        },
+        {
+          label: '🛡 भारत-केंद्रित ठगी सुरक्षा (नक़ली बैंक/KYC/लॉटरी)',
+          type: 'checkbox',
+          checked: settings.scamProtection,
+          click: (item) => {
+            settings.scamProtection = item.checked;
+            saveSettings();
+          },
+        },
+        {
+          label: '👵 सरल मोड (बड़े बटन/अक्षर, ज़्यादा सुरक्षा)',
+          type: 'checkbox',
+          checked: settings.simpleMode,
+          click: (item) => {
+            settings.simpleMode = item.checked;
+            saveSettings();
+            sendState();
           },
         },
         {

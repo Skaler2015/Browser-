@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="hi">
+<head>
+  <meta charset="UTF-8" />
+  <title>टाइम-मशीन</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: "Segoe UI", system-ui, sans-serif;
+      background: #1b1d23;
+      color: #e8eaf0;
+      padding: 32px 24px 60px 24px;
+      max-width: 860px;
+      margin: 0 auto;
+    }
+    h1 { font-size: 22px; margin-bottom: 6px; }
+    .sub { font-size: 12px; color: #8a90a0; margin-bottom: 22px; }
+    .snap {
+      background: #23262e;
+      border-radius: 12px;
+      padding: 16px 18px;
+      margin-bottom: 14px;
+    }
+    .snap .head { display: flex; align-items: center; gap: 12px; margin-bottom: 10px; }
+    .snap .when { font-size: 15px; font-weight: 600; }
+    .snap .cnt { font-size: 12px; color: #8a90a0; }
+    .snap .restore {
+      margin-left: auto;
+      border: none;
+      background: #2f5a94;
+      color: #fff;
+      font-size: 13px;
+      padding: 8px 16px;
+      border-radius: 8px;
+      cursor: pointer;
+    }
+    .snap .restore:hover { background: #3a6cb0; }
+    .snap .urls { display: flex; flex-wrap: wrap; gap: 6px; }
+    .snap .u {
+      font-size: 11px;
+      background: #14161a;
+      color: #b9c0cc;
+      border-radius: 6px;
+      padding: 4px 9px;
+      cursor: pointer;
+      max-width: 240px;
+      overflow: hidden;
+      white-space: nowrap;
+      text-overflow: ellipsis;
+    }
+    .snap .u:hover { background: #2f333d; color: #fff; }
+    .empty { color: #8a90a0; padding: 60px 0; text-align: center; }
+  </style>
+</head>
+<body>
+  <h1>⏮ टाइम-मशीन</h1>
+  <p class="sub">
+    ब्राउज़र हर घंटे आपके खुले टैबों का एक स्नैपशॉट (सिर्फ़ इसी कंप्यूटर पर) रखता है।
+    किसी भी समय पर लौटकर वे सारे टैब वापस खोल सकते हैं। प्राइवेट टैब कभी सेव नहीं होते।
+  </p>
+  <div id="list"></div>
+  <script>
+    function fmt(ts) {
+      const d = new Date(ts);
+      const now = new Date();
+      const sameDay = d.toDateString() === now.toDateString();
+      const yst = new Date(now.getTime() - 86400000).toDateString() === d.toDateString();
+      const time = d.toLocaleTimeString('hi-IN', { hour: '2-digit', minute: '2-digit' });
+      if (sameDay) return 'आज ' + time;
+      if (yst) return 'कल ' + time;
+      return d.toLocaleDateString('hi-IN', { day: 'numeric', month: 'short' }) + ', ' + time;
+    }
+    function host(u) {
+      try { return new URL(u).hostname.replace(/^www\./, ''); } catch { return u; }
+    }
+    async function refresh() {
+      const snaps = (await window.tez.list('timemachine')) || [];
+      const list = document.getElementById('list');
+      list.innerHTML = '';
+      if (!snaps.length) {
+        list.innerHTML =
+          '<div class="empty">अभी कोई स्नैपशॉट नहीं — ब्राउज़र कुछ देर खुला रहने पर हर घंटे अपने-आप बनेंगे।</div>';
+        return;
+      }
+      for (const s of snaps) {
+        const card = document.createElement('div');
+        card.className = 'snap';
+        const head = document.createElement('div');
+        head.className = 'head';
+        const when = document.createElement('span');
+        when.className = 'when';
+        when.textContent = fmt(s.ts);
+        const cnt = document.createElement('span');
+        cnt.className = 'cnt';
+        cnt.textContent = s.count + ' टैब';
+        const btn = document.createElement('button');
+        btn.className = 'restore';
+        btn.textContent = '↻ ये सारे टैब वापस खोलें';
+        btn.addEventListener('click', () => window.tez.action('timemachine', 'restore', s.ts));
+        head.append(when, cnt, btn);
+        const urls = document.createElement('div');
+        urls.className = 'urls';
+        for (const u of s.urls) {
+          const chip = document.createElement('span');
+          chip.className = 'u';
+          chip.textContent = host(u);
+          chip.title = u;
+          chip.addEventListener('click', () => window.tez.action('timemachine', 'openOne', u));
+          urls.appendChild(chip);
+        }
+        if (s.count > s.urls.length) {
+          const more = document.createElement('span');
+          more.className = 'u';
+          more.textContent = '+' + (s.count - s.urls.length) + ' और';
+          urls.appendChild(more);
+        }
+        card.append(head, urls);
+        list.appendChild(card);
+      }
+    }
+    refresh();
+    setInterval(refresh, 10000);
+  </script>
+</body>
+</html>

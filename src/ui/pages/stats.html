@@ -77,6 +77,16 @@
     <div class="card"><div class="n" id="total">0</div><div class="l">कुल (अब तक)</div></div>
     <div class="card"><div class="n" id="saved-mb">0 MB</div><div class="l">अनुमानित डेटा बचत</div></div>
   </div>
+
+  <h2>💰 आपने कितना बचाया</h2>
+  <div class="cards">
+    <div class="card"><div class="n" id="saved-rs" style="color:#ffd764">₹0</div><div class="l">अनुमानित पैसे बचे (डेटा-पैक भाव से)</div></div>
+    <div class="card"><div class="n" id="saved-min" style="color:#8fd694">0 मि.</div><div class="l">ऐड न लोड होने से समय बचा</div></div>
+  </div>
+  <p class="hint">
+    यह अनुमान आपके डेटा-पैक के भाव पर आधारित है (डिफ़ॉल्ट ₹<span id="rate">15</span>/GB)।
+    ये सिर्फ़ मोटे अंदाज़े हैं, असली बचत साइट और नेट-प्लान पर निर्भर करती है।
+  </p>
   <h2>पिछले 30 दिन</h2>
   <div class="chart" id="chart"></div>
   <h2>अपनी कस्टम फ़िल्टर लिस्ट</h2>
@@ -95,6 +105,10 @@
       document.getElementById('total').textContent = s.total.toLocaleString('hi-IN');
       document.getElementById('saved-mb').textContent =
         s.savedMB >= 1024 ? (s.savedMB / 1024).toFixed(1) + ' GB' : s.savedMB + ' MB';
+      document.getElementById('saved-rs').textContent = '₹' + (s.savedRupees || 0).toLocaleString('hi-IN');
+      document.getElementById('saved-min').textContent =
+        (s.savedMinutes >= 60 ? Math.floor(s.savedMinutes / 60) + ' घं. ' + (s.savedMinutes % 60) : s.savedMinutes) + ' मि.';
+      document.getElementById('rate').textContent = s.dataPackRate || 15;
       if (document.activeElement !== document.getElementById('filters')) {
         document.getElementById('filters').value = s.customFilters || '';
       }
