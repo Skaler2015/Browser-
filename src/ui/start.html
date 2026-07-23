@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="hi">
+<head>
+  <meta charset="UTF-8" />
+  <title>नया टैब</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body {
+      height: 100%;
+      font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
+      background: linear-gradient(160deg, #1b1d23 0%, #23283a 100%);
+      color: #e8eaf0;
+    }
+    .wrap {
+      height: 100%;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 28px;
+      padding: 24px;
+    }
+    h1 { font-size: 40px; font-weight: 600; letter-spacing: 1px; }
+    h1 span { color: #6db3ff; }
+    form { width: 100%; max-width: 560px; }
+    input {
+      width: 100%;
+      height: 52px;
+      padding: 0 24px;
+      border: none;
+      border-radius: 26px;
+      font-size: 16px;
+      background: #ffffff;
+      color: #1b1d23;
+      outline: none;
+      box-shadow: 0 6px 24px rgba(0, 0, 0, 0.35);
+    }
+    .links { display: flex; gap: 14px; flex-wrap: wrap; justify-content: center; }
+    .links a {
+      padding: 10px 18px;
+      border-radius: 10px;
+      background: rgba(255, 255, 255, 0.07);
+      color: #cfd3dc;
+      text-decoration: none;
+      font-size: 14px;
+    }
+    .links a:hover { background: rgba(255, 255, 255, 0.14); }
+    .note { font-size: 13px; color: #8a90a0; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>Tez<span>Browser</span></h1>
+    <form action="https://duckduckgo.com/" method="get">
+      <input name="q" type="text" placeholder="वेब पर खोजें…" autofocus autocomplete="off" />
+    </form>
+    <div class="links">
+      <a href="https://www.wikipedia.org">Wikipedia</a>
+      <a href="https://www.youtube.com">YouTube</a>
+      <a href="https://news.google.com">Google News</a>
+      <a href="https://github.com">GitHub</a>
+    </div>
+    <p class="note">🛡 ऐड और ट्रैकर अपने-आप ब्लॉक — पेज तेज़ लोड होते हैं</p>
+  </div>
+</body>
+</html>

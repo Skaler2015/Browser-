@@ -1,0 +1,18 @@
+{
+  "name": "tez-browser",
+  "productName": "TezBrowser",
+  "version": "1.0.0",
+  "description": "Fast, ad-free desktop web browser with built-in ad & tracker blocking",
+  "main": "src/main.js",
+  "scripts": {
+    "start": "electron ."
+  },
+  "license": "MIT",
+  "devDependencies": {
+    "electron": "^33.2.0"
+  },
+  "dependencies": {
+    "@ghostery/adblocker-electron": "^2.1.1",
+    "cross-fetch": "^4.0.0"
+  }
+}
