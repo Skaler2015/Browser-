@@ -14,14 +14,29 @@ A fast, ad-free desktop web browser built on Electron (Chromium engine) with a b
 - 🚫 **पॉपअप ब्लॉक** — पॉपअप विंडो नई टैब में खुलती हैं, अलग विंडो में नहीं।
 - 📴 **ऑफ़लाइन कैश** — फ़िल्टर लिस्ट एक बार डाउनलोड होकर कैश हो जाती है।
 
-## चलाने का तरीका (How to run)
+## इंस्टॉल करने का तरीका (Install — no extra software needed)
 
-पहले [Node.js](https://nodejs.org) (v18+) इंस्टॉल करें, फिर:
+कुछ भी एक्स्ट्रा इंस्टॉल करने की ज़रूरत नहीं — बस रेडीमेड इंस्टॉलर डाउनलोड करें:
+
+1. इस रिपॉज़िटरी के **Actions** टैब में जाएँ: `https://github.com/Skaler2015/Browser-/actions`
+2. सबसे ऊपर वाला (latest) **Build installers** रन खोलें
+3. नीचे **Artifacts** सेक्शन से अपने सिस्टम के हिसाब से डाउनलोड करें:
+   - **TezBrowser-Windows** → इसमें `TezBrowser-1.0.0-win.exe` (इंस्टॉलर — डबल-क्लिक करें, अपने-आप इंस्टॉल होकर डेस्कटॉप शॉर्टकट बन जाएगा) और एक portable `.exe` (बिना इंस्टॉल किए सीधे चलाएँ) है
+   - **TezBrowser-Linux** → `TezBrowser-1.0.0-linux.AppImage` (executable बनाकर सीधे चलाएँ)
+4. ज़िप खोलें और इंस्टॉलर चला दें — बस हो गया! ✅
+
+हर नई push पर इंस्टॉलर अपने-आप ताज़ा बन जाता है।
+
+## डेवलपर की तरह चलाना (Optional: run from source)
+
+अगर सोर्स से चलाना हो तो [Node.js](https://nodejs.org) (v18+) इंस्टॉल करके:
 
 ```bash
 npm install
 npm start
 ```
+
+अपने कंप्यूटर पर ही इंस्टॉलर बनाने के लिए: `npm run dist`
 
 ## कीबोर्ड शॉर्टकट (Keyboard shortcuts)
 
@@ -31,15 +46,6 @@ npm start
 | `Ctrl+W` | टैब बंद करें |
 | `Ctrl+R` | पेज रीलोड |
 | `Ctrl+L` | एड्रेस बार पर जाएँ |
-
-## इंस्टॉलर बनाना (Optional: build an installer)
-
-Windows `.exe` / macOS `.dmg` / Linux `.AppImage` बनाने के लिए:
-
-```bash
-npm install --save-dev electron-builder
-npx electron-builder --win   # या --mac / --linux
-```
 
 ## स्ट्रक्चर (Structure)
 
