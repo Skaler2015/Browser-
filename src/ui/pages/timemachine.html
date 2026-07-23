@@ -1,8 +1,8 @@
 <!DOCTYPE html>
-<html lang="hi">
+<html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <title>टाइम-मशीन</title>
+  <title>Time Machine</title>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body {
@@ -53,10 +53,10 @@
   </style>
 </head>
 <body>
-  <h1>⏮ टाइम-मशीन</h1>
+  <h1>⏮ Time Machine</h1>
   <p class="sub">
-    ब्राउज़र हर घंटे आपके खुले टैबों का एक स्नैपशॉट (सिर्फ़ इसी कंप्यूटर पर) रखता है।
-    किसी भी समय पर लौटकर वे सारे टैब वापस खोल सकते हैं। प्राइवेट टैब कभी सेव नहीं होते।
+    The browser keeps an hourly snapshot of your open tabs (only on this computer).
+    You can go back to any point in time and reopen all those tabs. Private tabs are never saved.
   </p>
   <div id="list"></div>
   <script>
@@ -65,10 +65,10 @@
       const now = new Date();
       const sameDay = d.toDateString() === now.toDateString();
       const yst = new Date(now.getTime() - 86400000).toDateString() === d.toDateString();
-      const time = d.toLocaleTimeString('hi-IN', { hour: '2-digit', minute: '2-digit' });
-      if (sameDay) return 'आज ' + time;
-      if (yst) return 'कल ' + time;
-      return d.toLocaleDateString('hi-IN', { day: 'numeric', month: 'short' }) + ', ' + time;
+      const time = d.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' });
+      if (sameDay) return 'Today ' + time;
+      if (yst) return 'Yesterday ' + time;
+      return d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' }) + ', ' + time;
     }
     function host(u) {
       try { return new URL(u).hostname.replace(/^www\./, ''); } catch { return u; }
@@ -79,7 +79,7 @@
       list.innerHTML = '';
       if (!snaps.length) {
         list.innerHTML =
-          '<div class="empty">अभी कोई स्नैपशॉट नहीं — ब्राउज़र कुछ देर खुला रहने पर हर घंटे अपने-आप बनेंगे।</div>';
+          '<div class="empty">No snapshots yet — they are created automatically every hour once the browser stays open for a while.</div>';
         return;
       }
       for (const s of snaps) {
@@ -92,10 +92,10 @@
         when.textContent = fmt(s.ts);
         const cnt = document.createElement('span');
         cnt.className = 'cnt';
-        cnt.textContent = s.count + ' टैब';
+        cnt.textContent = s.count + ' tabs';
         const btn = document.createElement('button');
         btn.className = 'restore';
-        btn.textContent = '↻ ये सारे टैब वापस खोलें';
+        btn.textContent = '↻ Reopen all these tabs';
         btn.addEventListener('click', () => window.tez.action('timemachine', 'restore', s.ts));
         head.append(when, cnt, btn);
         const urls = document.createElement('div');
@@ -111,7 +111,7 @@
         if (s.count > s.urls.length) {
           const more = document.createElement('span');
           more.className = 'u';
-          more.textContent = '+' + (s.count - s.urls.length) + ' और';
+          more.textContent = '+' + (s.count - s.urls.length) + ' more';
           urls.appendChild(more);
         }
         card.append(head, urls);

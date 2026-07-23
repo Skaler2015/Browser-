@@ -1,11 +1,11 @@
 <!DOCTYPE html>
-<html lang="hi">
+<html lang="en">
 <head>
   <meta charset="UTF-8" />
   <!-- Article HTML is injected below; this CSP stops any of it from running code. -->
   <meta http-equiv="Content-Security-Policy"
         content="default-src 'none'; script-src 'nonce-tezreader'; style-src 'unsafe-inline'; img-src * data:; font-src *;" />
-  <title>रीडर मोड</title>
+  <title>Reader mode</title>
   <style>
     * { box-sizing: border-box; }
     body {
@@ -52,10 +52,10 @@
       const data = await window.tez.list('reader');
       if (!data || !data.html) {
         document.getElementById('content').innerHTML =
-          '<div class="empty">पढ़ने के लिए कुछ नहीं मिला — किसी आर्टिकल वाले पेज पर 📖 बटन दबाएँ।</div>';
+          '<div class="empty">Nothing to read here — open an article page and press the 📖 button.</div>';
         return;
       }
-      document.title = (data.title || 'रीडर मोड') + ' — रीडर';
+      document.title = (data.title || 'Reader mode') + ' — Reader';
       document.getElementById('title').textContent = data.title || '';
       document.getElementById('src').textContent = data.url || '';
       document.getElementById('content').innerHTML = data.html;

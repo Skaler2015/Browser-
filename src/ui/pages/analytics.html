@@ -1,8 +1,8 @@
 <!DOCTYPE html>
-<html lang="hi">
+<html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <title>मेरी ब्राउज़िंग analytics</title>
+  <title>My browsing analytics</title>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body {
@@ -75,51 +75,51 @@
   </style>
 </head>
 <body>
-  <h1>📈 मेरी ब्राउज़िंग analytics</h1>
-  <p class="sub">यह पूरा डेटा सिर्फ़ आपके कंप्यूटर पर है — कहीं बाहर नहीं जाता। प्राइवेट टैब कभी रिकॉर्ड नहीं होते।</p>
+  <h1>📈 My browsing analytics</h1>
+  <p class="sub">All this data stays only on your computer — it never leaves. Private tabs are never recorded.</p>
 
   <div class="cards">
-    <div class="card"><div class="n" id="c-today">–</div><div class="l">आज स्क्रीन-टाइम</div></div>
-    <div class="card"><div class="n" id="c-week">–</div><div class="l">पिछले 7 दिन</div><div class="d" id="c-week-diff"></div></div>
-    <div class="card"><div class="n" id="c-data">–</div><div class="l">इस हफ़्ते डेटा खपत</div></div>
-    <div class="card"><div class="n" id="c-dl">–</div><div class="l">कुल डाउनलोड</div></div>
+    <div class="card"><div class="n" id="c-today">–</div><div class="l">Screen time today</div></div>
+    <div class="card"><div class="n" id="c-week">–</div><div class="l">Last 7 days</div><div class="d" id="c-week-diff"></div></div>
+    <div class="card"><div class="n" id="c-data">–</div><div class="l">Data used this week</div></div>
+    <div class="card"><div class="n" id="c-dl">–</div><div class="l">Total downloads</div></div>
   </div>
 
-  <h2>पिछले 30 दिन (स्क्रीन-टाइम)</h2>
+  <h2>Last 30 days (screen time)</h2>
   <div class="chart" id="days30"></div>
 
-  <h2>किस साइट पर कितना समय — आज</h2>
+  <h2>Time spent per site — today</h2>
   <div class="rows" id="top-today"></div>
 
-  <h2>किस साइट पर कितना समय — 7 दिन</h2>
+  <h2>Time spent per site — 7 days</h2>
   <div class="rows" id="top-week"></div>
 
-  <h2>किस तरह की साइटों पर समय गया (7 दिन)</h2>
+  <h2>What kinds of sites you spent time on (7 days)</h2>
   <div class="pie" id="cats"></div>
 
-  <h2>कब-कब ब्राउज़ करते हैं (28 दिन का पैटर्न)</h2>
+  <h2>When you browse (28-day pattern)</h2>
   <div class="heat" id="heat"></div>
 
-  <h2>कौन आपको ट्रैक करने की कोशिश कर रहा था (कंपनी-वार, ब्लॉक हो चुके)</h2>
+  <h2>Who was trying to track you (by company, already blocked)</h2>
   <div class="pie" id="companies"></div>
   <div class="rows" id="trackers" style="margin-top:10px"></div>
 
-  <h2>सबसे ज़्यादा ऐड/ट्रैकर वाली साइटें</h2>
+  <h2>Sites with the most ads/trackers</h2>
   <div class="rows" id="dirty"></div>
 
-  <h2>डेटा खपत — आज (अनुमानित)</h2>
+  <h2>Data used — today (estimated)</h2>
   <div class="rows" id="data-today"></div>
 
-  <h2>⏰ स्क्रीन-टाइम लिमिट</h2>
+  <h2>⏰ Screen-time limit</h2>
   <div class="rows" id="limits"></div>
   <div class="limit-form">
-    <input id="lim-host" type="text" placeholder="साइट (जैसे youtube.com)" />
-    <input id="lim-min" type="number" min="1" placeholder="मिनट/दिन" />
-    <button id="lim-add">लिमिट लगाएँ</button>
+    <input id="lim-host" type="text" placeholder="Site (e.g. youtube.com)" />
+    <input id="lim-min" type="number" min="1" placeholder="Minutes/day" />
+    <button id="lim-add">Set limit</button>
   </div>
   <div class="rows" id="blocked-today" style="margin-top:10px"></div>
 
-  <button id="clear-all">🗑 सारा analytics डेटा मिटाएँ</button>
+  <button id="clear-all">🗑 Clear all analytics data</button>
 
   <script>
     const COLORS = ['#6db3ff', '#58c274', '#e8c94f', '#e5655f', '#a05bff', '#4fd0c0', '#d68fb8', '#9aa0ad'];
@@ -127,10 +127,10 @@
 
     function fmtTime(sec) {
       sec = Math.round(sec || 0);
-      if (sec < 60) return sec + ' से.';
+      if (sec < 60) return sec + ' sec';
       const m = Math.round(sec / 60);
-      if (m < 60) return m + ' मि.';
-      return Math.floor(m / 60) + ' घं. ' + (m % 60) + ' मि.';
+      if (m < 60) return m + ' min';
+      return Math.floor(m / 60) + ' hr ' + (m % 60) + ' min';
     }
     function fmtBytes(b) {
       if (!b) return '0 MB';
@@ -141,7 +141,7 @@
     function barRows(el, items, valOf, labelOf, cls, actions) {
       el.innerHTML = '';
       if (!items.length) {
-        el.innerHTML = '<div class="empty">अभी कोई डेटा नहीं — ब्राउज़ करते रहिए, यहाँ अपने-आप भरता जाएगा</div>';
+        el.innerHTML = '<div class="empty">No data yet — keep browsing and this will fill in automatically</div>';
         return;
       }
       const max = Math.max(...items.map(valOf), 1);
@@ -173,7 +173,7 @@
       $('c-week').textContent = fmtTime(a.weekSec);
       const diff = a.weekSec - a.lastWeekSec;
       $('c-week-diff').textContent = a.lastWeekSec
-        ? (diff >= 0 ? '▲ ' : '▼ ') + fmtTime(Math.abs(diff)) + ' पिछले हफ़्ते से'
+        ? (diff >= 0 ? '▲ ' : '▼ ') + fmtTime(Math.abs(diff)) + ' vs last week'
         : '';
       $('c-week-diff').className = 'd ' + (diff >= 0 ? 'up' : 'down');
       $('c-data').textContent = fmtBytes(a.dataWeekTotal);
@@ -207,10 +207,10 @@
         s.append(name + ' — ' + fmtTime(sec) + ' (' + Math.round((sec / catTotal) * 100) + '%)');
         cats.appendChild(s);
       });
-      if (!catEntries.length) cats.innerHTML = '<div class="empty">अभी कोई डेटा नहीं</div>';
+      if (!catEntries.length) cats.innerHTML = '<div class="empty">No data yet</div>';
 
       const heat = $('heat');
-      const daysHi = ['रवि', 'सोम', 'मंगल', 'बुध', 'गुरु', 'शुक्र', 'शनि'];
+      const daysHi = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
       let maxCell = 1;
       a.heatmap.forEach((r) => r.forEach((v) => (maxCell = Math.max(maxCell, v))));
       let html = '<table><tr><th></th>';
@@ -237,26 +237,26 @@
         dot.className = 'dot';
         dot.style.background = COLORS[i % COLORS.length];
         s.appendChild(dot);
-        s.append(c.name + ' — ' + c.count.toLocaleString('hi-IN') + ' बार');
+        s.append(c.name + ' — ' + c.count.toLocaleString('en-IN') + ' times');
         comp.appendChild(s);
       });
-      if (!a.companies.length) comp.innerHTML = '<div class="empty">अभी कोई ट्रैकर ब्लॉक नहीं हुआ</div>';
+      if (!a.companies.length) comp.innerHTML = '<div class="empty">No trackers blocked yet</div>';
 
-      barRows($('trackers'), a.trackers, (i) => i.count, (i) => i.count.toLocaleString('hi-IN') + ' बार', 't');
-      barRows($('dirty'), a.dirtySites, (i) => i.count, (i) => i.count.toLocaleString('hi-IN') + ' ब्लॉक', 't');
+      barRows($('trackers'), a.trackers, (i) => i.count, (i) => i.count.toLocaleString('en-IN') + ' times', 't');
+      barRows($('dirty'), a.dirtySites, (i) => i.count, (i) => i.count.toLocaleString('en-IN') + ' blocked', 't');
       barRows($('data-today'), a.dataToday, (i) => i.bytes, (i) => fmtBytes(i.bytes), 'd');
 
       const lim = $('limits');
       lim.innerHTML = '';
       if (!a.limits.length) {
-        lim.innerHTML = '<div class="empty">कोई लिमिट नहीं — नीचे से लगाएँ (जैसे youtube.com पर 60 मिनट/दिन)</div>';
+        lim.innerHTML = '<div class="empty">No limits — add one below (e.g. 60 minutes/day on youtube.com)</div>';
       }
       for (const l of a.limits) {
         const row = document.createElement('div');
         row.className = 'row';
         const name = document.createElement('span');
         name.className = 'name';
-        name.textContent = l.host + ' — ' + l.minutes + ' मि./दिन';
+        name.textContent = l.host + ' — ' + l.minutes + ' min/day';
         const track = document.createElement('div');
         track.className = 'track';
         const fill = document.createElement('div');
@@ -268,7 +268,7 @@
         val.className = 'val';
         val.textContent = fmtTime(l.usedSec) + ' (' + pct + '%)';
         const del = document.createElement('button');
-        del.textContent = 'हटाएँ';
+        del.textContent = 'Remove';
         del.addEventListener('click', async () => {
           await window.tez.action('analytics', 'removeLimit', l.host);
           refresh();
@@ -284,12 +284,12 @@
         row.className = 'row';
         const name = document.createElement('span');
         name.className = 'name';
-        name.textContent = '🚫 आज के लिए ब्लॉक: ' + h;
+        name.textContent = '🚫 Blocked for today: ' + h;
         const spacer = document.createElement('div');
         spacer.className = 'track';
         spacer.style.visibility = 'hidden';
         const un = document.createElement('button');
-        un.textContent = 'अनब्लॉक';
+        un.textContent = 'Unblock';
         un.addEventListener('click', async () => {
           await window.tez.action('analytics', 'unblock', h);
           refresh();
@@ -310,7 +310,7 @@
     });
 
     $('clear-all').addEventListener('click', async () => {
-      if (confirm('सारा analytics डेटा (समय, ग्राफ़, ट्रैकर, डेटा खपत) मिटा दें? लिमिट सेटिंग्स बनी रहेंगी।')) {
+      if (confirm('Clear all analytics data (time, graphs, trackers, data usage)? Limit settings will be kept.')) {
         await window.tez.action('analytics', 'clearAll');
         refresh();
       }

@@ -1,8 +1,8 @@
 <!DOCTYPE html>
-<html lang="hi">
+<html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <title>बुकमार्क</title>
+  <title>Bookmarks</title>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body {
@@ -52,7 +52,7 @@
   </style>
 </head>
 <body>
-  <h1>⭐ बुकमार्क</h1>
+  <h1>⭐ Bookmarks</h1>
   <div id="list"></div>
   <script>
     async function refresh() {
@@ -60,7 +60,7 @@
       const list = document.getElementById('list');
       list.innerHTML = '';
       if (!items.length) {
-        list.innerHTML = '<div class="empty">अभी कोई बुकमार्क नहीं — किसी साइट पर ☆ बटन दबाएँ</div>';
+        list.innerHTML = '<div class="empty">No bookmarks yet — press the ☆ button on any site</div>';
         return;
       }
       for (const b of items) {
@@ -74,7 +74,7 @@
         u.textContent = b.url;
         const del = document.createElement('button');
         del.textContent = '✕';
-        del.title = 'हटाएँ';
+        del.title = 'Remove';
         del.addEventListener('click', async (e) => {
           e.stopPropagation();
           await window.tez.action('bookmarks', 'remove', b.url);

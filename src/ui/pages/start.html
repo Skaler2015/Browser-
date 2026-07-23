@@ -1,8 +1,8 @@
 <!DOCTYPE html>
-<html lang="hi">
+<html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <title>नया टैब</title>
+  <title>New Tab</title>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
     html, body {
@@ -82,10 +82,10 @@
   <div class="wrap">
     <h1>Tez<span>Browser</span></h1>
     <form id="searchform" action="https://www.google.com/search" method="get">
-      <input name="q" type="text" placeholder="Google पर खोजें…" autofocus autocomplete="off" />
+      <input name="q" type="text" placeholder="Search Google…" autofocus autocomplete="off" />
     </form>
     <div id="dial"></div>
-    <p class="note">🛡 ऐड और ट्रैकर अपने-आप ब्लॉक — पेज तेज़ लोड होते हैं</p>
+    <p class="note">🛡 Ads and trackers blocked automatically — pages load faster</p>
   </div>
   <script>
     (async () => {
@@ -94,7 +94,7 @@
         if (search && search.action) {
           document.getElementById('searchform').action = search.action;
           document.querySelector('#searchform input').placeholder =
-            search.name + ' पर खोजें…';
+            'Search ' + search.name + '…';
         }
       } catch (e) {}
       try {

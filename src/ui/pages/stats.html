@@ -1,8 +1,8 @@
 <!DOCTYPE html>
-<html lang="hi">
+<html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <title>ऐड-ब्लॉक आँकड़े</title>
+  <title>Ad-block stats</title>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body {
@@ -70,44 +70,44 @@
   </style>
 </head>
 <body>
-  <h1>📊 ऐड-ब्लॉक आँकड़े</h1>
+  <h1>📊 Ad-block stats</h1>
   <div class="cards">
-    <div class="card"><div class="n" id="today">0</div><div class="l">आज ब्लॉक हुए</div></div>
-    <div class="card"><div class="n" id="week">0</div><div class="l">पिछले 7 दिन</div></div>
-    <div class="card"><div class="n" id="total">0</div><div class="l">कुल (अब तक)</div></div>
-    <div class="card"><div class="n" id="saved-mb">0 MB</div><div class="l">अनुमानित डेटा बचत</div></div>
+    <div class="card"><div class="n" id="today">0</div><div class="l">Blocked today</div></div>
+    <div class="card"><div class="n" id="week">0</div><div class="l">Last 7 days</div></div>
+    <div class="card"><div class="n" id="total">0</div><div class="l">Total (so far)</div></div>
+    <div class="card"><div class="n" id="saved-mb">0 MB</div><div class="l">Estimated data saved</div></div>
   </div>
 
-  <h2>💰 आपने कितना बचाया</h2>
+  <h2>💰 How much you saved</h2>
   <div class="cards">
-    <div class="card"><div class="n" id="saved-rs" style="color:#ffd764">₹0</div><div class="l">अनुमानित पैसे बचे (डेटा-पैक भाव से)</div></div>
-    <div class="card"><div class="n" id="saved-min" style="color:#8fd694">0 मि.</div><div class="l">ऐड न लोड होने से समय बचा</div></div>
+    <div class="card"><div class="n" id="saved-rs" style="color:#ffd764">₹0</div><div class="l">Estimated money saved (at data-pack rate)</div></div>
+    <div class="card"><div class="n" id="saved-min" style="color:#8fd694">0 min</div><div class="l">Time saved by not loading ads</div></div>
   </div>
   <p class="hint">
-    यह अनुमान आपके डेटा-पैक के भाव पर आधारित है (डिफ़ॉल्ट ₹<span id="rate">15</span>/GB)।
-    ये सिर्फ़ मोटे अंदाज़े हैं, असली बचत साइट और नेट-प्लान पर निर्भर करती है।
+    This estimate is based on your data-pack rate (default ₹<span id="rate">15</span>/GB).
+    These are only rough estimates; actual savings depend on the site and your net plan.
   </p>
-  <h2>पिछले 30 दिन</h2>
+  <h2>Last 30 days</h2>
   <div class="chart" id="chart"></div>
-  <h2>अपनी कस्टम फ़िल्टर लिस्ट</h2>
+  <h2>Your custom filter list</h2>
   <p class="hint">
-    हर लाइन पर एक फ़िल्टर (uBlock/Adblock जैसा सिंटैक्स) — जैसे: <code>||ads.example.com^</code>
-    &nbsp;या किसी साइट के तत्व छिपाने के लिए <code>example.com##.ad-box</code>। "!" से शुरू लाइनें टिप्पणी मानी जाती हैं।
+    One filter per line (uBlock/Adblock-style syntax) — e.g.: <code>||ads.example.com^</code>
+    &nbsp;or to hide an element on a site <code>example.com##.ad-box</code>. Lines starting with "!" are treated as comments.
   </p>
   <textarea id="filters" spellcheck="false" placeholder="||ads.example.com^"></textarea>
-  <div><button id="save">सेव करें</button><span id="saved"></span></div>
+  <div><button id="save">Save</button><span id="saved"></span></div>
   <script>
     async function refresh() {
       const s = await window.tez.list('stats');
       if (!s) return;
-      document.getElementById('today').textContent = s.today.toLocaleString('hi-IN');
-      document.getElementById('week').textContent = s.week.toLocaleString('hi-IN');
-      document.getElementById('total').textContent = s.total.toLocaleString('hi-IN');
+      document.getElementById('today').textContent = s.today.toLocaleString('en-IN');
+      document.getElementById('week').textContent = s.week.toLocaleString('en-IN');
+      document.getElementById('total').textContent = s.total.toLocaleString('en-IN');
       document.getElementById('saved-mb').textContent =
         s.savedMB >= 1024 ? (s.savedMB / 1024).toFixed(1) + ' GB' : s.savedMB + ' MB';
-      document.getElementById('saved-rs').textContent = '₹' + (s.savedRupees || 0).toLocaleString('hi-IN');
+      document.getElementById('saved-rs').textContent = '₹' + (s.savedRupees || 0).toLocaleString('en-IN');
       document.getElementById('saved-min').textContent =
-        (s.savedMinutes >= 60 ? Math.floor(s.savedMinutes / 60) + ' घं. ' + (s.savedMinutes % 60) : s.savedMinutes) + ' मि.';
+        (s.savedMinutes >= 60 ? Math.floor(s.savedMinutes / 60) + ' hr ' + (s.savedMinutes % 60) : s.savedMinutes) + ' min';
       document.getElementById('rate').textContent = s.dataPackRate || 15;
       if (document.activeElement !== document.getElementById('filters')) {
         document.getElementById('filters').value = s.customFilters || '';
@@ -125,13 +125,13 @@
         const bar = document.createElement('div');
         bar.className = 'bar';
         bar.style.height = Math.round((n / max) * 100) + '%';
-        bar.title = d + ': ' + n + ' ब्लॉक';
+        bar.title = d + ': ' + n + ' blocked';
         chart.appendChild(bar);
       }
     }
     document.getElementById('save').addEventListener('click', async () => {
       const ok = await window.tez.action('stats', 'setFilters', document.getElementById('filters').value);
-      document.getElementById('saved').textContent = ok ? 'सेव हो गया ✔' : 'कुछ फ़िल्टर ग़लत हैं';
+      document.getElementById('saved').textContent = ok ? 'Saved ✔' : 'Some filters are invalid';
       setTimeout(() => (document.getElementById('saved').textContent = ''), 3000);
     });
     refresh();

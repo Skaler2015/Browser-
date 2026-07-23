@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="hi">
+<html lang="en">
 <head>
   <meta charset="UTF-8" />
   <title>TezBrowser</title>
@@ -204,7 +204,8 @@
     }
     #address:focus { border-color: var(--accent); }
     #star.active { color: #ffd764; }
-    #keepalive.active { background: #263524; color: #8fd694; }
+    #keepalive { border: 1px solid transparent; }
+    #keepalive.active { background: #1f8a4c; color: #fff; border-color: #35d67f; }
     #shield {
       display: flex;
       align-items: center;
@@ -449,67 +450,67 @@
 <body>
   <div id="tabstrip"></div>
   <div id="navbar">
-    <button id="back" title="पीछे">&#8592;</button>
-    <button id="forward" title="आगे">&#8594;</button>
-    <button id="reload" title="रीलोड">&#8635;</button>
+    <button id="back" title="Back">&#8592;</button>
+    <button id="forward" title="Forward">&#8594;</button>
+    <button id="reload" title="Reload">&#8635;</button>
     <div id="addresswrap">
       <input id="address" type="text" spellcheck="false"
-             placeholder="सर्च करें, पता लिखें, या हिंदी में कहें — जैसे: यूट्यूब खोलो" autocomplete="off" />
+             placeholder="Search or type a web address — or speak, e.g. “open YouTube”" autocomplete="off" />
       <div id="suggest"></div>
     </div>
-    <button id="mic" title="बोलकर चलाएँ — जैसे &quot;यूट्यूब खोलो&quot;, &quot;यह पेज पढ़कर सुनाओ&quot;">🎤</button>
-    <button id="star" title="बुकमार्क (Ctrl+D)">☆</button>
-    <button id="reader" title="रीडर मोड — सिर्फ़ आर्टिकल पढ़ें">📖</button>
-    <button id="pip" title="पिक्चर-इन-पिक्चर — वीडियो छोटी विंडो में">🎦</button>
-    <button id="keepalive" title="ऑटो-लॉगआउट रोकें: इस साइट को लॉग-इन बनाए रखें">📌</button>
-    <button id="shield" title="ऐड-ब्लॉकर — क्लिक करके इस साइट पर बंद/चालू करें">🛡 <span id="blocked">0</span></button>
-    <button id="downloads" title="डाउनलोड (Ctrl+J)">⬇</button>
-    <button id="menu" title="मेन्यू">☰</button>
+    <button id="mic" title="Voice control — e.g. &quot;open YouTube&quot;, &quot;read this page aloud&quot;">🎤</button>
+    <button id="star" title="Bookmark (Ctrl+D)">☆</button>
+    <button id="reader" title="Reader mode — just the article">📖</button>
+    <button id="pip" title="Picture-in-picture — video in a small window">🎦</button>
+    <button id="keepalive" title="Keep me logged in on this site (prevents auto-logout)">📌</button>
+    <button id="shield" title="Ad blocker — click to turn off/on for this site">🛡 <span id="blocked">0</span></button>
+    <button id="downloads" title="Downloads (Ctrl+J)">⬇</button>
+    <button id="menu" title="Menu">☰</button>
   </div>
   <div id="findbar">
-    <input id="findtext" type="text" placeholder="पेज में खोजें…" />
+    <input id="findtext" type="text" placeholder="Find in page…" />
     <span id="findcount"></span>
-    <button id="findprev" title="पिछला">▲</button>
-    <button id="findnext" title="अगला">▼</button>
-    <button id="findclose" title="बंद करें">✕</button>
+    <button id="findprev" title="Previous">▲</button>
+    <button id="findnext" title="Next">▼</button>
+    <button id="findclose" title="Close">✕</button>
   </div>
 
   <div id="sidebar">
     <div id="sb-head">
-      <div id="sb-title">📎 फ़ाइल अपलोड करें</div>
-      <div id="sb-hint">फ़ोल्डर खोलें, फ़ाइल चुनें, फिर "अपलोड करें" दबाएँ</div>
+      <div id="sb-title">📎 Upload a file</div>
+      <div id="sb-hint">Open a folder, pick a file, then press "Upload"</div>
     </div>
     <div id="sb-nav">
-      <button id="sb-back" title="पीछे" disabled>←</button>
-      <button id="sb-fwd" title="आगे" disabled>→</button>
-      <button id="sb-up" title="पिछले फ़ोल्डर में जाएँ">↑</button>
-      <input id="sb-pathinput" type="text" spellcheck="false" placeholder="फ़ोल्डर का पता लिखें…" />
-      <button id="sb-star" title="इस फ़ोल्डर को फ़ेवरेट में जोड़ें/हटाएँ">☆</button>
+      <button id="sb-back" title="Back" disabled>←</button>
+      <button id="sb-fwd" title="Forward" disabled>→</button>
+      <button id="sb-up" title="Go to parent folder">↑</button>
+      <input id="sb-pathinput" type="text" spellcheck="false" placeholder="Type a folder path…" />
+      <button id="sb-star" title="Add/remove this folder from favourites">☆</button>
     </div>
     <div id="sb-tools">
-      <input id="sb-search" type="text" spellcheck="false" placeholder="🔍 इस फ़ोल्डर में खोजें…" />
-      <select id="sb-sort" title="छाँटें">
-        <option value="name">नाम (अ→ज्ञ)</option>
-        <option value="date">नई पहले</option>
-        <option value="size">बड़ी पहले</option>
+      <input id="sb-search" type="text" spellcheck="false" placeholder="🔍 Search in this folder…" />
+      <select id="sb-sort" title="Sort">
+        <option value="name">Name (A→Z)</option>
+        <option value="date">Newest first</option>
+        <option value="size">Largest first</option>
       </select>
-      <button id="sb-view" title="ग्रिड / लिस्ट बदलें">▦</button>
+      <button id="sb-view" title="Toggle grid / list">▦</button>
     </div>
     <div id="sb-accept"></div>
     <div id="sb-fav">
-      <div class="lbl">⭐ फ़ेवरेट फ़ोल्डर</div>
+      <div class="lbl">⭐ Favourite folders</div>
       <div class="chiprow" id="sb-fav-row"></div>
     </div>
     <div id="sb-quick">
-      <div class="lbl">तेज़ पहुँच</div>
+      <div class="lbl">Quick access</div>
       <div class="chiprow" id="sb-quick-row"></div>
     </div>
     <div id="sb-list"></div>
     <div id="sb-preview"></div>
     <div id="sb-count"></div>
     <div id="sb-foot">
-      <button id="sb-choose" disabled>अपलोड करें</button>
-      <button id="sb-cancel">रद्द करें</button>
+      <button id="sb-choose" disabled>Upload</button>
+      <button id="sb-cancel">Cancel</button>
     </div>
   </div>
 

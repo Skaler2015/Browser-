@@ -1,8 +1,8 @@
 <!DOCTYPE html>
-<html lang="hi">
+<html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <title>हिस्ट्री</title>
+  <title>History</title>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body {
@@ -54,15 +54,15 @@
   </style>
 </head>
 <body>
-  <h1>🕘 हिस्ट्री <button id="clear">पूरी हिस्ट्री मिटाएँ</button></h1>
-  <input id="search" type="text" placeholder="हिस्ट्री में खोजें…" />
+  <h1>🕘 History <button id="clear">Clear all history</button></h1>
+  <input id="search" type="text" placeholder="Search history…" />
   <div id="list"></div>
   <script>
     let all = [];
     function fmt(ts) {
       const d = new Date(ts);
-      return d.toLocaleDateString('hi-IN', { day: 'numeric', month: 'short' }) +
-        ' ' + d.toLocaleTimeString('hi-IN', { hour: '2-digit', minute: '2-digit' });
+      return d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' }) +
+        ' ' + d.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' });
     }
     function render() {
       const q = document.getElementById('search').value.trim().toLowerCase();
@@ -72,7 +72,7 @@
       const list = document.getElementById('list');
       list.innerHTML = '';
       if (!items.length) {
-        list.innerHTML = '<div class="empty">कुछ नहीं मिला</div>';
+        list.innerHTML = '<div class="empty">Nothing found</div>';
         return;
       }
       for (const h of items.slice(0, 500)) {
@@ -105,7 +105,7 @@
     }
     document.getElementById('search').addEventListener('input', render);
     document.getElementById('clear').addEventListener('click', async () => {
-      if (confirm('पूरी हिस्ट्री मिटा दें?')) {
+      if (confirm('Clear all history?')) {
         await window.tez.action('history', 'clear');
         refresh();
       }

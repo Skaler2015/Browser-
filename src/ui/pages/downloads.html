@@ -1,8 +1,8 @@
 <!DOCTYPE html>
-<html lang="hi">
+<html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <title>डाउनलोड</title>
+  <title>Downloads</title>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body {
@@ -57,15 +57,15 @@
   </style>
 </head>
 <body>
-  <h1>⬇ डाउनलोड <button id="clear">लिस्ट साफ़ करें</button></h1>
+  <h1>⬇ Downloads <button id="clear">Clear list</button></h1>
   <div id="list"></div>
   <script>
     const STATE_HI = {
-      progressing: 'डाउनलोड हो रहा है…',
-      paused: 'रुका हुआ',
-      completed: 'पूरा हुआ ✔',
-      cancelled: 'रद्द',
-      interrupted: 'रुकावट आई',
+      progressing: 'Downloading…',
+      paused: 'Paused',
+      completed: 'Completed ✔',
+      cancelled: 'Cancelled',
+      interrupted: 'Interrupted',
     };
     function size(n) {
       if (!n) return '';
@@ -83,7 +83,7 @@
       const list = document.getElementById('list');
       list.innerHTML = '';
       if (!items.length) {
-        list.innerHTML = '<div class="empty">कोई डाउनलोड नहीं</div>';
+        list.innerHTML = '<div class="empty">No downloads</div>';
         return;
       }
       for (const d of items) {
@@ -119,9 +119,9 @@
           b.addEventListener('click', () => act(d.id, action));
           actions.appendChild(b);
         };
-        if (d.state === 'progressing') { btn('⏸ रोकें', 'pause'); btn('✕ रद्द', 'cancel'); }
-        if (d.state === 'paused') { btn('▶ जारी रखें', 'resume'); btn('✕ रद्द', 'cancel'); }
-        if (d.state === 'completed') { btn('खोलें', 'open'); btn('फ़ोल्डर में दिखाएँ', 'show'); }
+        if (d.state === 'progressing') { btn('⏸ Pause', 'pause'); btn('✕ Cancel', 'cancel'); }
+        if (d.state === 'paused') { btn('▶ Resume', 'resume'); btn('✕ Cancel', 'cancel'); }
+        if (d.state === 'completed') { btn('Open', 'open'); btn('Show in folder', 'show'); }
         card.appendChild(actions);
         list.appendChild(card);
       }

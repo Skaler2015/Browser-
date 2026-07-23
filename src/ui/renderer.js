@@ -98,7 +98,7 @@ function render(state) {
       const badge = document.createElement('span');
       badge.className = 'idbadge';
       badge.textContent = '👥' + tab.identity;
-      badge.title = 'अलग पहचान — इसका लॉगिन बाकी टैबों से अलग है';
+      badge.title = 'Separate identity — its login is independent of other tabs';
       el.appendChild(badge);
     }
 
@@ -114,7 +114,7 @@ function render(state) {
       const sound = document.createElement('span');
       sound.className = 'sound';
       sound.textContent = tab.muted ? '🔇' : '🔊';
-      sound.title = tab.muted ? 'आवाज़ चालू करें' : 'टैब म्यूट करें';
+      sound.title = tab.muted ? 'Unmute' : 'Mute tab';
       sound.addEventListener('click', (e) => {
         e.stopPropagation();
         window.browser.muteTab(tab.id);
@@ -139,7 +139,7 @@ function render(state) {
   const plus = document.createElement('button');
   plus.id = 'newtab';
   plus.textContent = '+';
-  plus.title = 'नया टैब (Ctrl+T)';
+  plus.title = 'New tab (Ctrl+T)';
   plus.addEventListener('click', () => window.browser.newTab());
   tabstrip.appendChild(plus);
 
@@ -149,21 +149,22 @@ function render(state) {
     backBtn.disabled = !active.canGoBack;
     forwardBtn.disabled = !active.canGoForward;
     reloadBtn.textContent = active.loading ? '×' : '↻';
-    reloadBtn.title = active.loading ? 'रोकें' : 'रीलोड';
+    reloadBtn.title = active.loading ? 'Stop' : 'Reload';
     blockedEl.textContent = active.blocked;
     keepAliveBtn.classList.toggle('active', !!active.keepAlive);
+    keepAliveBtn.textContent = active.keepAlive ? '📍' : '📌';
     keepAliveBtn.title = active.keepAlive
-      ? 'लॉग-इन बनाए रखना चालू है (बंद करने के लिए क्लिक करें)'
-      : 'ऑटो-लॉगआउट रोकें: इस साइट को लॉग-इन बनाए रखें';
+      ? 'Keep-alive is ON — staying logged in on this site (click to turn OFF)'
+      : 'Keep-alive is OFF — click to stay logged in on this site (prevents auto-logout)';
     starBtn.classList.toggle('active', !!state.activeIsBookmarked);
     starBtn.textContent = state.activeIsBookmarked ? '★' : '☆';
     const shieldOff = !state.adblockEnabled || state.activeWhitelisted;
     shieldBtn.classList.toggle('off', shieldOff);
     shieldBtn.title = !state.adblockEnabled
-      ? 'ऐड-ब्लॉकर बंद है (मेन्यू से चालू करें)'
+      ? 'Ad blocker is off (turn it on from the menu)'
       : state.activeWhitelisted
-        ? 'इस साइट पर ऐड-ब्लॉकर बंद है — चालू करने के लिए क्लिक करें'
-        : 'ऐड-ब्लॉकर चालू — इस साइट पर बंद करने के लिए क्लिक करें';
+        ? 'Ad blocker is off for this site — click to turn on'
+        : 'Ad blocker is on — click to turn off for this site';
     document.title = active.title + ' — TezBrowser';
   }
   downloadsBtn.classList.toggle('busy', (state.downloadsActive || 0) > 0);
@@ -302,7 +303,7 @@ function closeFind() {
 
 window.browser.onFindOpen(openFind);
 window.browser.onFindResult(({ active, matches }) => {
-  findCount.textContent = matches ? `${active}/${matches}` : 'कोई नतीजा नहीं';
+  findCount.textContent = matches ? `${active}/${matches}` : 'No results';
 });
 
 findText.addEventListener('input', () => {
@@ -414,7 +415,7 @@ function buildAcceptFilter(accept) {
   }
   if (any || (!exts.size && !cats.size)) return null;
   const catSets = { image: SB_IMG, video: SB_VID, audio: SB_AUD };
-  const catName = { image: 'फ़ोटो', video: 'वीडियो', audio: 'ऑडियो', text: 'टेक्स्ट', application: 'दस्तावेज़' };
+  const catName = { image: 'Photos', video: 'Video', audio: 'Audio', text: 'Text', application: 'Documents' };
   const labels = [];
   cats.forEach((c) => labels.push(catName[c] || c));
   exts.forEach((e) => labels.push('.' + e));
@@ -447,7 +448,7 @@ async function sbPreview(pth) {
     return;
   }
   sbPreviewEl.classList.add('show');
-  sbPreviewEl.innerHTML = '<div class="pvinfo">प्रीव्यू लोड हो रहा…</div>';
+  sbPreviewEl.innerHTML = '<div class="pvinfo">Loading preview…</div>';
   const info = await window.browser.fsPreview(pth);
   if (token !== sbPreviewToken) return;
   sbPreviewEl.innerHTML = '';
@@ -464,7 +465,7 @@ async function sbPreview(pth) {
   if (info.kind === 'image') {
     const img = new Image();
     img.src = info.url;
-    img.onerror = () => (sbPreviewEl.innerHTML = '<div class="pvinfo">इमेज नहीं दिखा पाए</div>');
+    img.onerror = () => (sbPreviewEl.innerHTML = '<div class="pvinfo">Could not show image</div>');
     sbPreviewEl.appendChild(img);
   } else if (info.kind === 'video') {
     const v = document.createElement('video');
@@ -487,7 +488,7 @@ async function sbPreview(pth) {
   } else {
     const d = document.createElement('div');
     d.className = 'pvinfo';
-    d.textContent = 'इस तरह की फ़ाइल का प्रीव्यू उपलब्ध नहीं है।';
+    d.textContent = 'No preview available for this file type.';
     sbPreviewEl.appendChild(d);
   }
 }
@@ -495,7 +496,7 @@ async function sbPreview(pth) {
 function renderChips() {
   sbFavRow.innerHTML = '';
   if (!sbFavs.length) {
-    sbFavRow.innerHTML = '<span style="font-size:11px;color:var(--dim)">कोई फ़ेवरेट नहीं — ऊपर ☆ से जोड़ें</span>';
+    sbFavRow.innerHTML = '<span style="font-size:11px;color:var(--dim)">No favourites yet — add one with ☆ above</span>';
   }
   for (const f of sbFavs) {
     const chip = document.createElement('div');
@@ -506,7 +507,7 @@ function renderChips() {
     const x = document.createElement('span');
     x.className = 'x';
     x.textContent = '✕';
-    x.title = 'फ़ेवरेट से हटाएँ';
+    x.title = 'Remove from favourites';
     x.addEventListener('click', async (e) => {
       e.stopPropagation();
       sbFavs = await window.browser.fsFavorite('remove', f.path);
@@ -551,7 +552,7 @@ function applyView() {
   sbList.classList.toggle('grid', sbGrid);
   sbList.innerHTML = '';
   if (!ordered.length) {
-    sbList.innerHTML = '<div id="sb-empty">' + (q ? 'कुछ नहीं मिला' : 'यहाँ दिखाने को कुछ नहीं') + '</div>';
+    sbList.innerHTML = '<div id="sb-empty">' + (q ? 'Nothing found' : 'Nothing to show here') + '</div>';
     return;
   }
   for (const item of ordered) {
@@ -667,7 +668,7 @@ function renderQuick(quick) {
   sbQuickRow.innerHTML = '';
   const recentChip = document.createElement('div');
   recentChip.className = 'chip';
-  recentChip.textContent = '🕘 हाल की फ़ाइलें';
+  recentChip.textContent = '🕘 Recent files';
   recentChip.addEventListener('click', loadRecent);
   sbQuickRow.appendChild(recentChip);
   for (const q of quick) {
@@ -682,8 +683,8 @@ function renderQuick(quick) {
 function updateChooseBtn() {
   const n = sbSelected.size;
   sbChoose.disabled = n === 0;
-  sbChoose.textContent = n > 1 ? n + ' फ़ाइलें अपलोड करें' : 'अपलोड करें';
-  sbCount.textContent = n ? n + ' चुनी गई' : '';
+  sbChoose.textContent = n > 1 ? 'Upload ' + n + ' files' : 'Upload';
+  sbCount.textContent = n ? n + ' selected' : '';
 }
 
 function doChoose() {
@@ -729,12 +730,12 @@ function showAcceptBar() {
     sbAcceptBar.classList.add('show');
     sbAcceptBar.innerHTML = '';
     const txt = document.createElement('span');
-    txt.textContent = 'इस साइट को चाहिए: ' + sbAccept.label;
+    txt.textContent = 'This site wants: ' + sbAccept.label;
     const link = document.createElement('a');
-    link.textContent = sbAcceptOff ? 'सिर्फ़ ज़रूरी दिखाएँ' : 'सब दिखाएँ';
+    link.textContent = sbAcceptOff ? 'Show only matching' : 'Show all';
     link.addEventListener('click', () => {
       sbAcceptOff = !sbAcceptOff;
-      link.textContent = sbAcceptOff ? 'सिर्फ़ ज़रूरी दिखाएँ' : 'सब दिखाएँ';
+      link.textContent = sbAcceptOff ? 'Show only matching' : 'Show all';
       applyView();
     });
     sbAcceptBar.append(txt, link);
@@ -749,8 +750,8 @@ window.browser.onUploadOpen((d) => {
   sbAccept = buildAcceptFilter(d && d.accept);
   sbAcceptOff = false;
   document.getElementById('sb-hint').textContent = sbMultiple
-    ? 'एक या कई फ़ाइलें चुनें, फिर "अपलोड करें" दबाएँ'
-    : 'फ़ोल्डर खोलें, फ़ाइल चुनें, फिर "अपलोड करें" दबाएँ';
+    ? 'Pick one or more files, then press "Upload"'
+    : 'Open a folder, pick a file, then press "Upload"';
   showAcceptBar();
   sidebar.classList.add('open');
   positionSidebar();
@@ -766,7 +767,7 @@ window.browser.onUploadClose(() => {
 });
 
 // ---------------------------------------------------------------------------
-// Voice: speak a command like "यूट्यूब खोलो" — routed through nav:go (which
+// Voice: speak a command like "open YouTube" — routed through nav:go (which
 // parses commands). Uses the browser's built-in speech recognition.
 // ---------------------------------------------------------------------------
 const micBtn = document.getElementById('mic');
@@ -782,19 +783,19 @@ if (!SR) {
       return;
     }
     rec = new SR();
-    rec.lang = 'hi-IN';
+    rec.lang = 'en-US';
     rec.interimResults = false;
     rec.maxAlternatives = 1;
     rec.onstart = () => {
       listening = true;
       micBtn.classList.add('listening');
-      address.placeholder = '🎤 सुन रहा हूँ… बोलिए';
+      address.placeholder = '🎤 Listening… speak now';
     };
     rec.onerror = () => {};
     rec.onend = () => {
       listening = false;
       micBtn.classList.remove('listening');
-      address.placeholder = 'सर्च करें, पता लिखें, या हिंदी में कहें — जैसे: यूट्यूब खोलो';
+      address.placeholder = 'Search or type a web address — or speak, e.g. “open YouTube”';
     };
     rec.onresult = (e) => {
       const said = e.results[0][0].transcript;
