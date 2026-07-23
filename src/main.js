@@ -71,7 +71,7 @@ const settings = Object.assign(
     dataSaver: false,
     forceDark: false,
     whitelist: [],
-    searchEngine: 'duckduckgo',
+    searchEngine: 'google',
     httpsOnly: true,
     tabSleep: true,
     askDownloadPath: false,
