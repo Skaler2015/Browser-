@@ -340,6 +340,7 @@ const sbFavRow = document.getElementById('sb-fav-row');
 const sbQuickRow = document.getElementById('sb-quick-row');
 const sbChoose = document.getElementById('sb-choose');
 const sbCount = document.getElementById('sb-count');
+const sbPreviewEl = document.getElementById('sb-preview');
 
 let sbCurDir = '';
 let sbParent = null;
@@ -371,6 +372,60 @@ function sbExtIcon(name) {
   return '📄';
 }
 
+let sbPreviewToken = 0;
+async function sbPreview(pth) {
+  const token = ++sbPreviewToken;
+  if (!pth) {
+    sbPreviewEl.classList.remove('show');
+    sbPreviewEl.innerHTML = '';
+    return;
+  }
+  sbPreviewEl.classList.add('show');
+  sbPreviewEl.innerHTML = '<div class="pvinfo">प्रीव्यू लोड हो रहा…</div>';
+  const info = await window.browser.fsPreview(pth);
+  if (token !== sbPreviewToken) return; // a newer click superseded this one
+  sbPreviewEl.innerHTML = '';
+  if (!info || info.kind === 'none') {
+    sbPreviewEl.classList.remove('show');
+    return;
+  }
+  if (info.name) {
+    const nm = document.createElement('div');
+    nm.className = 'pvname';
+    nm.textContent = info.name + (info.size ? ' · ' + sbFmtSize(info.size) : '');
+    sbPreviewEl.appendChild(nm);
+  }
+  if (info.kind === 'image') {
+    const img = new Image();
+    img.src = info.url;
+    img.onerror = () => (sbPreviewEl.innerHTML = '<div class="pvinfo">इमेज नहीं दिखा पाए</div>');
+    sbPreviewEl.appendChild(img);
+  } else if (info.kind === 'video') {
+    const v = document.createElement('video');
+    v.src = info.url;
+    v.controls = true;
+    sbPreviewEl.appendChild(v);
+  } else if (info.kind === 'audio') {
+    const a = document.createElement('audio');
+    a.src = info.url;
+    a.controls = true;
+    sbPreviewEl.appendChild(a);
+  } else if (info.kind === 'pdf') {
+    const f = document.createElement('iframe');
+    f.src = info.url;
+    sbPreviewEl.appendChild(f);
+  } else if (info.kind === 'text') {
+    const pre = document.createElement('pre');
+    pre.textContent = info.text;
+    sbPreviewEl.appendChild(pre);
+  } else {
+    const d = document.createElement('div');
+    d.className = 'pvinfo';
+    d.textContent = 'इस तरह की फ़ाइल का प्रीव्यू उपलब्ध नहीं है।';
+    sbPreviewEl.appendChild(d);
+  }
+}
+
 function positionSidebar() {
   const findH = findbar.classList.contains('open') ? findbar.offsetHeight : 0;
   sidebar.style.top = tabstrip.offsetHeight + document.getElementById('navbar').offsetHeight + findH + 'px';
@@ -380,6 +435,7 @@ function positionSidebar() {
 async function sbLoad(dir) {
   const data = await window.browser.fsList(dir);
   if (!data) return;
+  sbPreview(null); // moving folders clears any open preview
   sbCurDir = data.path;
   sbParent = data.parent;
   sbFavs = data.favorites || [];
@@ -466,6 +522,7 @@ async function sbLoad(dir) {
           });
         }
         updateChooseBtn();
+        sbPreview(item.path);
       });
       row.addEventListener('dblclick', () => {
         sbSelected.clear();
@@ -513,6 +570,7 @@ window.browser.onUploadOpen((d) => {
 window.browser.onUploadClose(() => {
   sidebar.classList.remove('open');
   sbSelected.clear();
+  sbPreview(null);
 });
 
 // ---------------------------------------------------------------------------

@@ -1989,6 +1989,40 @@ function listDir(dir) {
   };
 }
 
+const PV_IMG = new Set(['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp', 'svg', 'ico', 'avif']);
+const PV_VID = new Set(['mp4', 'webm', 'mov', 'mkv', 'avi', 'm4v', 'ogv']);
+const PV_AUD = new Set(['mp3', 'wav', 'm4a', 'ogg', 'oga', 'flac', 'aac']);
+const PV_TEXT = new Set([
+  'txt', 'md', 'csv', 'log', 'json', 'xml', 'js', 'ts', 'css', 'html', 'htm',
+  'py', 'java', 'c', 'cpp', 'h', 'sh', 'yml', 'yaml', 'ini', 'conf', 'rtf',
+]);
+
+// Return a preview descriptor for a file the user clicked in the upload sidebar.
+ipcMain.handle('fs:preview', (_e, p) => {
+  try {
+    if (typeof p !== 'string') return { kind: 'none' };
+    const st = fs.statSync(p);
+    if (!st.isFile()) return { kind: 'none' };
+    const ext = (path.extname(p).slice(1) || '').toLowerCase();
+    const base = { name: path.basename(p), size: st.size, ext };
+    if (PV_IMG.has(ext)) return { ...base, kind: 'image', url: pathToFileURL(p).href };
+    if (PV_VID.has(ext)) return { ...base, kind: 'video', url: pathToFileURL(p).href };
+    if (PV_AUD.has(ext)) return { ...base, kind: 'audio', url: pathToFileURL(p).href };
+    if (ext === 'pdf') return { ...base, kind: 'pdf', url: pathToFileURL(p).href };
+    if (PV_TEXT.has(ext) || (st.size > 0 && st.size < 200000)) {
+      const fd = fs.openSync(p, 'r');
+      const buf = Buffer.alloc(Math.min(st.size, 65536));
+      const n = fs.readSync(fd, buf, 0, buf.length, 0);
+      fs.closeSync(fd);
+      const slice = buf.subarray(0, n);
+      if (!slice.includes(0)) return { ...base, kind: 'text', text: slice.toString('utf8') };
+    }
+    return { ...base, kind: 'info' };
+  } catch {
+    return { kind: 'none' };
+  }
+});
+
 ipcMain.handle('fs:list', (_e, dir) => listDir(dir));
 ipcMain.handle('fs:favorite', (_e, { action, path: p }) => {
   const i = favFolders.indexOf(p);
