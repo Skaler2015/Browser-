@@ -20,7 +20,17 @@ const store = require('./store');
 // Settings (loaded before app.ready so startup flags can apply)
 // ---------------------------------------------------------------------------
 const settings = Object.assign(
-  { adblockEnabled: true, dataSaver: false, forceDark: false, whitelist: [] },
+  {
+    adblockEnabled: true,
+    dataSaver: false,
+    forceDark: false,
+    whitelist: [],
+    searchEngine: 'duckduckgo',
+    httpsOnly: true,
+    tabSleep: true,
+    askDownloadPath: false,
+    downloadDir: '',
+  },
   store.load('settings', {})
 );
 const whitelist = new Set(settings.whitelist);
@@ -35,29 +45,44 @@ if (settings.forceDark) {
   nativeTheme.themeSource = 'dark';
 }
 
+const SEARCH_ENGINES = {
+  duckduckgo: { name: 'DuckDuckGo', search: 'https://duckduckgo.com/?q=', action: 'https://duckduckgo.com/' },
+  google: { name: 'Google', search: 'https://www.google.com/search?q=', action: 'https://www.google.com/search' },
+  bing: { name: 'Bing', search: 'https://www.bing.com/search?q=', action: 'https://www.bing.com/search' },
+  brave: { name: 'Brave', search: 'https://search.brave.com/search?q=', action: 'https://search.brave.com/search' },
+};
+function engine() {
+  return SEARCH_ENGINES[settings.searchEngine] || SEARCH_ENGINES.duckduckgo;
+}
+
 // ---------------------------------------------------------------------------
 // Constants & state
 // ---------------------------------------------------------------------------
 const DEFAULT_CHROME_HEIGHT = 84;
 let chromeHeight = DEFAULT_CHROME_HEIGHT;
-const START_PAGE = pathToFileURL(path.join(__dirname, 'ui', 'start.html')).href;
 const PAGES_DIR = path.join(__dirname, 'ui', 'pages');
 const PAGES_PREFIX = pathToFileURL(PAGES_DIR).href;
+const START_PAGE = pathToFileURL(path.join(PAGES_DIR, 'start.html')).href;
 const INTERNAL_PAGES = {
   bookmarks: 'bookmarks.html',
   history: 'history.html',
   downloads: 'downloads.html',
+  reader: 'reader.html',
 };
 const INTERNAL_PRELOAD = path.join(__dirname, 'internal-preload.js');
 const HISTORY_LIMIT = 5000;
+const TAB_SLEEP_AFTER_MS = 30 * 60 * 1000; // background tabs sleep after 30 min
 
 let win = null;
 let blocker = null;
 let privateSession = null;
 let activeTabId = null;
 let nextTabId = 1;
-const tabs = new Map(); // id -> { id, view, blocked, keepAlive, isPrivate, muted, audible }
+const tabs = new Map(); // id -> tab object
+let tabOrder = []; // tab ids in display order (pinned first)
 const closedTabs = []; // urls of recently closed tabs (this run only)
+const httpAllowed = new Set(); // hosts the user chose to open over plain http
+let readerContent = null; // {title, url, html} for the reader page
 
 const bookmarks = store.load('bookmarks', []); // [{url, title, ts}]
 const history = store.load('history', []); // [{url, title, ts}] newest first
@@ -74,7 +99,7 @@ function internalURL(name) {
 }
 
 function displayURL(url) {
-  if (!url || url === START_PAGE) return '';
+  if (!url || url === START_PAGE || url === 'about:blank') return '';
   for (const name of Object.keys(INTERNAL_PAGES)) {
     if (url === internalURL(name)) return 'tez://' + name;
   }
@@ -87,11 +112,12 @@ function toURL(input) {
   if (text.startsWith('tez://')) {
     const name = text.slice(6).replace(/\/+$/, '');
     if (INTERNAL_PAGES[name]) return internalURL(name);
+    if (name === 'start' || name === 'newtab') return START_PAGE;
   }
   if (/^[a-zA-Z][a-zA-Z0-9+.-]*:\/\//.test(text)) return text;
   if (text === 'localhost' || text.startsWith('localhost:')) return 'http://' + text;
   if (!text.includes(' ') && text.includes('.')) return 'https://' + text;
-  return 'https://duckduckgo.com/?q=' + encodeURIComponent(text);
+  return engine().search + encodeURIComponent(text);
 }
 
 function hostOf(url) {
@@ -100,6 +126,13 @@ function hostOf(url) {
   } catch {
     return '';
   }
+}
+
+// The URL a tab "is on" — for sleeping tabs, the page it will wake up to.
+function tabURL(tab) {
+  if (tab.asleep) return tab.sleepURL;
+  const wc = tab.view.webContents;
+  return wc.isDestroyed() ? '' : wc.getURL();
 }
 
 // ---------------------------------------------------------------------------
@@ -121,7 +154,6 @@ async function setupAdBlocker() {
       write: fs.promises.writeFile,
     });
 
-    // Re-apply persisted per-site whitelist as exception filters.
     const added = [];
     for (const domain of whitelist) added.push(...siteExceptionFilters(domain));
     if (added.length) blocker.updateFromDiff({ added });
@@ -164,7 +196,7 @@ function setAdblockEnabled(on) {
 function toggleSiteWhitelist() {
   const tab = activeTab();
   if (!tab) return;
-  const domain = hostOf(tab.view.webContents.getURL());
+  const domain = hostOf(tabURL(tab));
   if (!domain) return;
   if (whitelist.has(domain)) {
     whitelist.delete(domain);
@@ -185,12 +217,14 @@ function wireSession(ses) {
   ses.setPreloads([...ses.getPreloads(), INTERNAL_PRELOAD]);
   ses.on('will-download', (_e, item) => {
     const id = nextDownloadId++;
-    const savePath = uniquePath(app.getPath('downloads'), item.getFilename());
-    item.setSavePath(savePath);
+    if (!settings.askDownloadPath) {
+      const dir = settings.downloadDir || app.getPath('downloads');
+      item.setSavePath(uniquePath(dir, item.getFilename()));
+    }
     const entry = {
       id,
-      filename: path.basename(savePath),
-      savePath,
+      filename: item.getFilename(),
+      savePath: item.getSavePath(),
       url: item.getURL(),
       state: 'progressing',
       received: 0,
@@ -201,12 +235,15 @@ function wireSession(ses) {
     downloadItems.set(id, item);
 
     item.on('updated', (_ev, state) => {
+      entry.savePath = item.getSavePath();
+      entry.filename = path.basename(entry.savePath || item.getFilename());
       entry.received = item.getReceivedBytes();
       entry.total = item.getTotalBytes();
       entry.state = state === 'interrupted' ? 'interrupted' : item.isPaused() ? 'paused' : 'progressing';
       sendStateThrottled();
     });
     item.once('done', (_ev, state) => {
+      entry.savePath = item.getSavePath();
       entry.received = item.getReceivedBytes();
       entry.state = state === 'completed' ? 'completed' : state === 'cancelled' ? 'cancelled' : 'interrupted';
       downloadItems.delete(id);
@@ -259,7 +296,7 @@ const KEEP_ALIVE_SNIPPET = `(() => {
 setInterval(() => {
   for (const tab of tabs.values()) {
     const wc = tab.view.webContents;
-    if (tab.keepAlive && !wc.isDestroyed() && !wc.isLoading()) {
+    if (tab.keepAlive && !tab.asleep && !wc.isDestroyed() && !wc.isLoading()) {
       wc.executeJavaScript(KEEP_ALIVE_SNIPPET, true).catch(() => {});
     }
   }
@@ -274,6 +311,42 @@ function updatePowerBlocker() {
     powerSaveBlocker.stop(powerBlockerId);
     powerBlockerId = null;
   }
+}
+
+// ---------------------------------------------------------------------------
+// Memory saver: put long-inactive background tabs to sleep
+// ---------------------------------------------------------------------------
+setInterval(() => {
+  if (!settings.tabSleep) return;
+  const now = Date.now();
+  for (const tab of tabs.values()) {
+    if (
+      tab.id === activeTabId ||
+      tab.asleep ||
+      tab.pinned ||
+      tab.keepAlive ||
+      tab.audible ||
+      now - tab.lastActive < TAB_SLEEP_AFTER_MS
+    ) {
+      continue;
+    }
+    const wc = tab.view.webContents;
+    if (wc.isDestroyed()) continue;
+    const url = wc.getURL();
+    if (!/^https?:\/\//.test(url)) continue; // only sleep real web pages
+    tab.sleepURL = url;
+    tab.sleepTitle = wc.getTitle() || url;
+    tab.asleep = true;
+    wc.loadURL('about:blank');
+  }
+  sendStateThrottled();
+}, 60 * 1000);
+
+function wakeTab(tab) {
+  if (!tab.asleep) return;
+  tab.asleep = false;
+  tab.lastActive = Date.now();
+  tab.view.webContents.loadURL(tab.sleepURL);
 }
 
 // ---------------------------------------------------------------------------
@@ -304,14 +377,71 @@ function isBookmarked(url) {
 function toggleBookmark() {
   const tab = activeTab();
   if (!tab) return;
-  const wc = tab.view.webContents;
-  const url = wc.getURL();
+  const url = tabURL(tab);
   if (!/^https?:\/\//.test(url)) return;
   const idx = bookmarks.findIndex((b) => b.url === url);
   if (idx >= 0) bookmarks.splice(idx, 1);
-  else bookmarks.unshift({ url, title: wc.getTitle() || url, ts: Date.now() });
+  else {
+    bookmarks.unshift({
+      url,
+      title: (tab.asleep ? tab.sleepTitle : tab.view.webContents.getTitle()) || url,
+      ts: Date.now(),
+    });
+  }
   store.save('bookmarks', bookmarks);
   sendState();
+}
+
+function topSites() {
+  const counts = new Map();
+  for (const h of history) {
+    try {
+      const u = new URL(h.url);
+      if (!/^https?:$/.test(u.protocol)) continue;
+      const c = counts.get(u.origin) || { count: 0, host: u.hostname.replace(/^www\./, '') };
+      c.count++;
+      counts.set(u.origin, c);
+    } catch {}
+  }
+  return [...counts.entries()]
+    .sort((a, b) => b[1].count - a[1].count)
+    .slice(0, 8)
+    .map(([origin, c]) => ({ url: origin, host: c.host }));
+}
+
+// ---------------------------------------------------------------------------
+// Reader mode
+// ---------------------------------------------------------------------------
+const READER_EXTRACT_SNIPPET = `(() => {
+  const pick = document.querySelector('article') || document.querySelector('main') || document.body;
+  if (!pick) return null;
+  const clone = pick.cloneNode(true);
+  clone.querySelectorAll(
+    'script,style,noscript,iframe,nav,header,footer,aside,form,button,svg,video,audio,ins,[role="navigation"],[role="banner"],[aria-hidden="true"]'
+  ).forEach((n) => n.remove());
+  return { title: document.title, url: location.href, html: clone.innerHTML.slice(0, 900000) };
+})();`;
+
+function sanitizeHTML(html) {
+  return String(html)
+    .replace(/<script[\s\S]*?<\/script>/gi, '')
+    .replace(/\son[a-z]+\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]+)/gi, '')
+    .replace(/(href|src)\s*=\s*(?:"\s*javascript:[^"]*"|'\s*javascript:[^']*')/gi, '');
+}
+
+async function openReader() {
+  const tab = activeTab();
+  if (!tab || tab.asleep) return;
+  const wc = tab.view.webContents;
+  if (!/^https?:\/\//.test(wc.getURL())) return;
+  try {
+    const res = await wc.executeJavaScript(READER_EXTRACT_SNIPPET, true);
+    if (!res || !res.html) return;
+    readerContent = { title: res.title || '', url: res.url || wc.getURL(), html: sanitizeHTML(res.html) };
+    createTab(internalURL('reader'));
+  } catch (err) {
+    console.warn('reader extraction failed:', err.message);
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -325,8 +455,18 @@ function adblockerPreload() {
   }
 }
 
+function pinnedCount() {
+  let n = 0;
+  for (const id of tabOrder) {
+    const t = tabs.get(id);
+    if (t && t.pinned) n++;
+  }
+  return n;
+}
+
 function createTab(url = START_PAGE, opts = {}) {
-  const { activate = true, isPrivate = false } = opts;
+  const { activate = true, isPrivate = false, pinned = false } = opts;
+  if (isPrivate) getPrivateSession();
   const id = nextTabId++;
   const view = new WebContentsView({
     webPreferences: {
@@ -339,10 +479,26 @@ function createTab(url = START_PAGE, opts = {}) {
       preload: adblockerPreload(), // cosmetic filtering (hides leftover ad frames)
     },
   });
-  if (isPrivate) getPrivateSession();
 
-  const tab = { id, view, blocked: 0, keepAlive: false, isPrivate, muted: false, audible: false };
+  const tab = {
+    id,
+    view,
+    blocked: 0,
+    keepAlive: false,
+    isPrivate,
+    pinned,
+    muted: false,
+    audible: false,
+    asleep: false,
+    sleepURL: '',
+    sleepTitle: '',
+    favicon: '',
+    htmlFullscreen: false,
+    lastActive: Date.now(),
+  };
   tabs.set(id, tab);
+  if (pinned) tabOrder.splice(pinnedCount(), 0, id);
+  else tabOrder.push(id);
   win.contentView.addChildView(view);
 
   const wc = view.webContents;
@@ -360,8 +516,15 @@ function createTab(url = START_PAGE, opts = {}) {
     wc.on(ev, sendStateThrottled);
   }
   wc.on('did-navigate', (_e, navUrl) => {
-    if (!isPrivate) recordHistory(navUrl, wc.getTitle());
+    if (!isPrivate && !tab.asleep) recordHistory(navUrl, wc.getTitle());
     saveSessionDebounced();
+  });
+  wc.on('did-start-navigation', (_e, _url, _inPlace, isMainFrame) => {
+    if (isMainFrame) tab.favicon = '';
+  });
+  wc.on('page-favicon-updated', (_e, favicons) => {
+    tab.favicon = (favicons && favicons[0]) || '';
+    sendStateThrottled();
   });
   wc.on('page-title-updated', (_e, title) => {
     if (!isPrivate) updateHistoryTitle(wc.getURL(), title);
@@ -380,6 +543,46 @@ function createTab(url = START_PAGE, opts = {}) {
   });
   wc.on('context-menu', (_e, params) => showContextMenu(wc, params));
 
+  // Video/page fullscreen: let the page cover the whole window
+  wc.on('enter-html-full-screen', () => {
+    tab.htmlFullscreen = true;
+    layout();
+  });
+  wc.on('leave-html-full-screen', () => {
+    tab.htmlFullscreen = false;
+    layout();
+  });
+
+  // HTTPS-only: upgrade plain http navigation unless the user allowed it
+  wc.on('will-navigate', (e, target) => {
+    if (!settings.httpsOnly) return;
+    if (!target.startsWith('http://')) return;
+    const host = hostOf(target);
+    if (!host || host === 'localhost' || httpAllowed.has(host)) return;
+    e.preventDefault();
+    tab.httpsUpgradedFrom = target;
+    wc.loadURL('https://' + target.slice('http://'.length));
+  });
+  wc.on('did-fail-load', async (_e, errorCode, _desc, validatedURL, isMainFrame) => {
+    if (!isMainFrame || errorCode === -3 /* aborted */) return;
+    const original = tab.httpsUpgradedFrom;
+    tab.httpsUpgradedFrom = null;
+    if (!original || !validatedURL.startsWith('https://')) return;
+    const host = hostOf(original);
+    const { response } = await dialog.showMessageBox(win, {
+      type: 'warning',
+      buttons: ['असुरक्षित (http) खोलें', 'रहने दें'],
+      defaultId: 1,
+      cancelId: 1,
+      message: host + ' सुरक्षित (https) रूप में नहीं खुल रहा',
+      detail: 'यह साइट बिना एन्क्रिप्शन के है। खोलने पर आपका डेटा रास्ते में पढ़ा जा सकता है।',
+    });
+    if (response === 0) {
+      httpAllowed.add(host);
+      wc.loadURL(original);
+    }
+  });
+
   wc.loadURL(url);
   if (activate) activateTab(id);
   else sendState();
@@ -387,10 +590,15 @@ function createTab(url = START_PAGE, opts = {}) {
 }
 
 function activateTab(id) {
-  if (!tabs.has(id)) return;
+  const tab = tabs.get(id);
+  if (!tab) return;
+  const prev = activeTab();
+  if (prev) prev.lastActive = Date.now();
   activeTabId = id;
-  for (const tab of tabs.values()) {
-    tab.view.setVisible(tab.id === id);
+  tab.lastActive = Date.now();
+  if (tab.asleep) wakeTab(tab);
+  for (const t of tabs.values()) {
+    t.view.setVisible(t.id === id);
   }
   layout();
   sendState();
@@ -399,14 +607,16 @@ function activateTab(id) {
 function closeTab(id) {
   const tab = tabs.get(id);
   if (!tab) return;
-  const url = tab.view.webContents.getURL();
+  const url = tabURL(tab);
   if (!tab.isPrivate && /^https?:\/\//.test(url)) {
     closedTabs.push(url);
     if (closedTabs.length > 50) closedTabs.shift();
   }
+  const orderIdx = tabOrder.indexOf(id);
   win.contentView.removeChildView(tab.view);
   tab.view.webContents.close();
   tabs.delete(id);
+  tabOrder = tabOrder.filter((x) => x !== id);
   updatePowerBlocker();
 
   if (tabs.size === 0) {
@@ -414,11 +624,19 @@ function closeTab(id) {
     return;
   }
   if (activeTabId === id) {
-    const remaining = [...tabs.keys()];
-    activateTab(remaining[remaining.length - 1]);
+    const next = tabOrder[Math.min(orderIdx, tabOrder.length - 1)];
+    activateTab(next);
   } else {
     sendState();
   }
+}
+
+function closeOtherTabs(id) {
+  for (const otherId of [...tabOrder]) {
+    const t = tabs.get(otherId);
+    if (otherId !== id && t && !t.pinned) closeTab(otherId);
+  }
+  activateTab(id);
 }
 
 function reopenClosedTab() {
@@ -430,11 +648,44 @@ function activeTab() {
   return tabs.get(activeTabId) || null;
 }
 
+function cycleTab(dir) {
+  if (tabOrder.length < 2) return;
+  const idx = tabOrder.indexOf(activeTabId);
+  const next = tabOrder[(idx + dir + tabOrder.length) % tabOrder.length];
+  activateTab(next);
+}
+
+function togglePin(id) {
+  const tab = tabs.get(id);
+  if (!tab) return;
+  tab.pinned = !tab.pinned;
+  tabOrder = tabOrder.filter((x) => x !== id);
+  tabOrder.splice(pinnedCount(), 0, id); // end of pinned zone either way
+  saveSessionDebounced();
+  sendState();
+}
+
+function reorderTab(id, targetId) {
+  const tab = tabs.get(id);
+  if (!tab) return;
+  tabOrder = tabOrder.filter((x) => x !== id);
+  let idx = targetId != null ? tabOrder.indexOf(targetId) : -1;
+  if (idx < 0) idx = tabOrder.length;
+  // keep pinned tabs in the pinned zone and normal tabs out of it
+  const zone = pinnedCount();
+  idx = tab.pinned ? Math.min(idx, zone) : Math.max(idx, zone);
+  tabOrder.splice(idx, 0, id);
+  sendState();
+}
+
 function layout() {
   if (!win) return;
   const [w, h] = win.getContentSize();
   const tab = activeTab();
-  if (tab) {
+  if (!tab) return;
+  if (tab.htmlFullscreen) {
+    tab.view.setBounds({ x: 0, y: 0, width: w, height: h });
+  } else {
     tab.view.setBounds({
       x: 0,
       y: chromeHeight,
@@ -448,15 +699,17 @@ function layout() {
 // Session restore
 // ---------------------------------------------------------------------------
 function saveSession() {
-  const list = [...tabs.values()].filter(
-    (t) => !t.isPrivate && !t.view.webContents.isDestroyed()
-  );
+  const list = tabOrder
+    .map((id) => tabs.get(id))
+    .filter((t) => t && !t.isPrivate && !t.view.webContents.isDestroyed());
   if (list.length === 0) return;
-  const urls = list
-    .map((t) => t.view.webContents.getURL())
-    .filter((u) => /^https?:\/\//.test(u) || u === START_PAGE || u.startsWith(PAGES_PREFIX));
+  const entries = list
+    .map((t) => ({ url: tabURL(t), pinned: !!t.pinned }))
+    .filter(
+      (e) => /^https?:\/\//.test(e.url) || e.url === START_PAGE || e.url.startsWith(PAGES_PREFIX)
+    );
   const activeIdx = list.findIndex((t) => t.id === activeTabId);
-  store.save('session', { urls, active: activeIdx });
+  store.save('session', { entries, active: activeIdx });
 }
 
 function saveSessionDebounced() {
@@ -466,16 +719,23 @@ function saveSessionDebounced() {
 
 function restoreSession() {
   const saved = store.load('session', null);
-  if (!saved || !Array.isArray(saved.urls) || saved.urls.length === 0) {
+  // accept both the current format {entries} and the older {urls}
+  const entries =
+    saved && Array.isArray(saved.entries)
+      ? saved.entries
+      : saved && Array.isArray(saved.urls)
+        ? saved.urls.map((u) => ({ url: u, pinned: false }))
+        : [];
+  if (!entries.length) {
     createTab();
     return;
   }
   let activeTabRef = null;
-  saved.urls.forEach((u, i) => {
-    const tab = createTab(u, { activate: false });
+  entries.forEach((entry, i) => {
+    const tab = createTab(entry.url, { activate: false, pinned: !!entry.pinned });
     if (i === saved.active) activeTabRef = tab;
   });
-  activateTab((activeTabRef || [...tabs.values()][0]).id);
+  activateTab((activeTabRef || tabs.get(tabOrder[0])).id);
 }
 
 // ---------------------------------------------------------------------------
@@ -484,29 +744,35 @@ function restoreSession() {
 function sendState() {
   if (!win || win.isDestroyed()) return;
   const active = activeTab();
-  const activeURL = active ? active.view.webContents.getURL() : '';
+  const activeURL = active ? tabURL(active) : '';
   const state = {
     activeTabId,
     adblockEnabled: settings.adblockEnabled,
     activeWhitelisted: whitelist.has(hostOf(activeURL)),
     activeIsBookmarked: isBookmarked(activeURL),
     downloadsActive: downloads.filter((d) => d.state === 'progressing').length,
-    tabs: [...tabs.values()].map((t) => {
-      const wc = t.view.webContents;
-      return {
-        id: t.id,
-        title: wc.getTitle() || 'नया टैब',
-        url: displayURL(wc.getURL()),
-        loading: wc.isLoading(),
-        canGoBack: wc.navigationHistory.canGoBack(),
-        canGoForward: wc.navigationHistory.canGoForward(),
-        blocked: t.blocked,
-        keepAlive: t.keepAlive,
-        isPrivate: t.isPrivate,
-        audible: t.audible,
-        muted: t.muted,
-      };
-    }),
+    tabs: tabOrder
+      .map((id) => tabs.get(id))
+      .filter(Boolean)
+      .map((t) => {
+        const wc = t.view.webContents;
+        return {
+          id: t.id,
+          title: t.asleep ? t.sleepTitle : wc.getTitle() || 'नया टैब',
+          url: displayURL(tabURL(t)),
+          loading: !t.asleep && wc.isLoading(),
+          canGoBack: wc.navigationHistory.canGoBack(),
+          canGoForward: wc.navigationHistory.canGoForward(),
+          blocked: t.blocked,
+          keepAlive: t.keepAlive,
+          isPrivate: t.isPrivate,
+          pinned: t.pinned,
+          audible: t.audible,
+          muted: t.muted,
+          asleep: t.asleep,
+          favicon: t.favicon,
+        };
+      }),
   };
   win.webContents.send('state', state);
   saveSessionDebounced();
@@ -538,13 +804,43 @@ function navForward() {
 }
 function navReload() {
   const tab = activeTab();
-  if (tab) tab.view.webContents.reload();
+  if (!tab) return;
+  if (tab.asleep) wakeTab(tab);
+  else tab.view.webContents.reload();
 }
 function zoomActive(delta) {
   const tab = activeTab();
   if (!tab) return;
   const wc = tab.view.webContents;
   wc.setZoomLevel(delta === 0 ? 0 : wc.getZoomLevel() + delta);
+}
+
+// ---------------------------------------------------------------------------
+// Address bar suggestions
+// ---------------------------------------------------------------------------
+function suggestions(query) {
+  const q = (query || '').trim().toLowerCase();
+  if (!q) return [];
+  const out = [];
+  const seen = new Set();
+  const push = (type, title, url) => {
+    if (seen.has(url) || out.length >= 7) return;
+    seen.add(url);
+    out.push({ type, title: title || url, url });
+  };
+  for (const b of bookmarks) {
+    if (out.length >= 3) break;
+    if (b.url.toLowerCase().includes(q) || (b.title || '').toLowerCase().includes(q)) {
+      push('bookmark', b.title, b.url);
+    }
+  }
+  for (const h of history) {
+    if (out.length >= 7) break;
+    if (h.url.toLowerCase().includes(q) || (h.title || '').toLowerCase().includes(q)) {
+      push('history', h.title, h.url);
+    }
+  }
+  return out;
 }
 
 // ---------------------------------------------------------------------------
@@ -607,8 +903,19 @@ async function clearBrowsingData() {
   sendState();
 }
 
+async function chooseDownloadDir() {
+  const { canceled, filePaths } = await dialog.showOpenDialog(win, {
+    properties: ['openDirectory'],
+    defaultPath: settings.downloadDir || app.getPath('downloads'),
+  });
+  if (!canceled && filePaths[0]) {
+    settings.downloadDir = filePaths[0];
+    saveSettings();
+  }
+}
+
 // ---------------------------------------------------------------------------
-// Context menu (right click on pages)
+// Context menus
 // ---------------------------------------------------------------------------
 function showContextMenu(wc, params) {
   const items = [];
@@ -642,7 +949,7 @@ function showContextMenu(wc, params) {
       { label: 'कॉपी', role: 'copy' },
       {
         label: `"${short}" सर्च करें`,
-        click: () => createTab('https://duckduckgo.com/?q=' + encodeURIComponent(text)),
+        click: () => createTab(engine().search + encodeURIComponent(text)),
       },
       { type: 'separator' }
     );
@@ -655,6 +962,31 @@ function showContextMenu(wc, params) {
   Menu.buildFromTemplate(items).popup({ window: win });
 }
 
+function showTabContextMenu(id) {
+  const tab = tabs.get(id);
+  if (!tab) return;
+  Menu.buildFromTemplate([
+    { label: tab.pinned ? '📍 अनपिन करें' : '📍 पिन करें', click: () => togglePin(id) },
+    {
+      label: tab.muted ? '🔊 आवाज़ चालू करें' : '🔇 म्यूट करें',
+      click: () => toggleMute(id),
+    },
+    { label: '↻ रीलोड', click: () => tabs.has(id) && tabs.get(id).view.webContents.reload() },
+    { label: '⧉ डुप्लिकेट', click: () => createTab(tabURL(tab), { isPrivate: tab.isPrivate }) },
+    { type: 'separator' },
+    { label: 'बाकी सब टैब बंद करें', click: () => closeOtherTabs(id) },
+    { label: 'टैब बंद करें', click: () => closeTab(id) },
+  ]).popup({ window: win });
+}
+
+function toggleMute(id) {
+  const tab = tabs.get(id);
+  if (!tab) return;
+  tab.muted = !tab.muted;
+  tab.view.webContents.setAudioMuted(tab.muted);
+  sendState();
+}
+
 // ---------------------------------------------------------------------------
 // IPC: toolbar
 // ---------------------------------------------------------------------------
@@ -662,17 +994,16 @@ ipcMain.on('tab:new', () => createTab());
 ipcMain.on('tab:new-private', () => createTab(START_PAGE, { isPrivate: true }));
 ipcMain.on('tab:close', (_e, id) => closeTab(id));
 ipcMain.on('tab:activate', (_e, id) => activateTab(id));
-ipcMain.on('tab:mute', (_e, id) => {
-  const tab = tabs.get(id);
-  if (!tab) return;
-  tab.muted = !tab.muted;
-  tab.view.webContents.setAudioMuted(tab.muted);
-  sendState();
-});
+ipcMain.on('tab:mute', (_e, id) => toggleMute(id));
+ipcMain.on('tab:context', (_e, id) => showTabContextMenu(id));
+ipcMain.on('tab:reorder', (_e, { id, targetId }) => reorderTab(id, targetId));
 ipcMain.on('nav:go', (_e, input) => {
   const url = toURL(input);
   const tab = activeTab();
-  if (url && tab) tab.view.webContents.loadURL(url);
+  if (url && tab) {
+    tab.asleep = false;
+    tab.view.webContents.loadURL(url);
+  }
 });
 ipcMain.on('nav:back', navBack);
 ipcMain.on('nav:forward', navForward);
@@ -685,16 +1016,18 @@ ipcMain.on('keepalive:toggle', (_e, id) => {
   const tab = tabs.get(id);
   if (!tab) return;
   tab.keepAlive = !tab.keepAlive;
+  if (tab.keepAlive && tab.asleep) wakeTab(tab);
   updatePowerBlocker();
   sendState();
 });
 ipcMain.on('bookmark:toggle', toggleBookmark);
 ipcMain.on('shield:toggle', toggleSiteWhitelist);
+ipcMain.on('reader:open', openReader);
 ipcMain.on('internal:open', (_e, name) => {
   if (INTERNAL_PAGES[name]) createTab(internalURL(name));
 });
 ipcMain.on('ui:chrome-height', (_e, h) => {
-  chromeHeight = Math.max(DEFAULT_CHROME_HEIGHT, Math.min(200, Number(h) || DEFAULT_CHROME_HEIGHT));
+  chromeHeight = Math.max(DEFAULT_CHROME_HEIGHT, Math.min(400, Number(h) || DEFAULT_CHROME_HEIGHT));
   layout();
 });
 ipcMain.on('ui:menu', (_e, pos) => {
@@ -704,6 +1037,7 @@ ipcMain.on('ui:menu', (_e, pos) => {
     y: Math.round(pos.y),
   });
 });
+ipcMain.handle('suggest', (_e, q) => suggestions(q));
 ipcMain.on('find:start', (_e, text) => {
   const tab = activeTab();
   if (tab && text) tab.view.webContents.findInPage(text);
@@ -718,7 +1052,7 @@ ipcMain.on('find:stop', () => {
 });
 
 // ---------------------------------------------------------------------------
-// IPC: internal pages (bookmarks / history / downloads)
+// IPC: internal pages (bookmarks / history / downloads / reader / start)
 // Only frames actually loaded from src/ui/pages/ may use these.
 // ---------------------------------------------------------------------------
 function isInternalSender(event) {
@@ -731,6 +1065,9 @@ ipcMain.handle('tez:list', (event, kind) => {
   if (kind === 'bookmarks') return bookmarks;
   if (kind === 'history') return history.slice(0, 1000);
   if (kind === 'downloads') return downloads;
+  if (kind === 'topsites') return topSites();
+  if (kind === 'search') return { action: engine().action, name: engine().name };
+  if (kind === 'reader') return readerContent;
   return null;
 });
 
@@ -837,11 +1174,16 @@ function menuTemplate() {
         { label: 'रीलोड', accelerator: 'CmdOrCtrl+R', click: navReload },
         { label: 'एड्रेस बार', accelerator: 'CmdOrCtrl+L', click: () => win && win.webContents.send('focus-address') },
         { label: 'पेज में खोजें…', accelerator: 'CmdOrCtrl+F', click: () => win && win.webContents.send('find:open') },
+        { label: '📖 रीडर मोड', click: openReader },
+        { type: 'separator' },
+        { label: 'अगला टैब', accelerator: 'Control+Tab', click: () => cycleTab(1) },
+        { label: 'पिछला टैब', accelerator: 'Control+Shift+Tab', click: () => cycleTab(-1) },
         { type: 'separator' },
         { label: 'ज़ूम बढ़ाएँ', accelerator: 'CmdOrCtrl+=', click: () => zoomActive(0.5) },
         { label: 'ज़ूम घटाएँ', accelerator: 'CmdOrCtrl+-', click: () => zoomActive(-0.5) },
         { label: 'ज़ूम रीसेट', accelerator: 'CmdOrCtrl+0', click: () => zoomActive(0) },
         { type: 'separator' },
+        { role: 'togglefullscreen', label: 'फ़ुल-स्क्रीन' },
         {
           label: 'DevTools (page)',
           accelerator: 'CmdOrCtrl+Shift+I',
@@ -871,6 +1213,24 @@ function menuTemplate() {
           click: (item) => setAdblockEnabled(item.checked),
         },
         {
+          label: 'HTTPS-only (असुरक्षित साइटों पर चेतावनी)',
+          type: 'checkbox',
+          checked: settings.httpsOnly,
+          click: (item) => {
+            settings.httpsOnly = item.checked;
+            saveSettings();
+          },
+        },
+        {
+          label: 'मेमोरी सेवर (पुराने टैब सुला दें)',
+          type: 'checkbox',
+          checked: settings.tabSleep,
+          click: (item) => {
+            settings.tabSleep = item.checked;
+            saveSettings();
+          },
+        },
+        {
           label: 'डेटा सेवर (नई टैबों में इमेज बंद)',
           type: 'checkbox',
           checked: settings.dataSaver,
@@ -891,6 +1251,34 @@ function menuTemplate() {
               detail: 'यह बदलाव ब्राउज़र दोबारा खोलने पर लागू होगा।',
             });
           },
+        },
+        { type: 'separator' },
+        {
+          label: 'सर्च इंजन',
+          submenu: Object.entries(SEARCH_ENGINES).map(([key, e]) => ({
+            label: e.name,
+            type: 'radio',
+            checked: settings.searchEngine === key,
+            click: () => {
+              settings.searchEngine = key;
+              saveSettings();
+            },
+          })),
+        },
+        {
+          label: 'डाउनलोड',
+          submenu: [
+            {
+              label: 'हर बार पूछें कहाँ सेव करना है',
+              type: 'checkbox',
+              checked: settings.askDownloadPath,
+              click: (item) => {
+                settings.askDownloadPath = item.checked;
+                saveSettings();
+              },
+            },
+            { label: 'डाउनलोड फ़ोल्डर बदलें…', click: chooseDownloadDir },
+          ],
         },
         { type: 'separator' },
         { label: '🧹 ब्राउज़िंग डेटा साफ़ करें…', click: clearBrowsingData },

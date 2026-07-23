@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="hi">
+<head>
+  <meta charset="UTF-8" />
+  <!-- Article HTML is injected below; this CSP stops any of it from running code. -->
+  <meta http-equiv="Content-Security-Policy"
+        content="default-src 'none'; script-src 'nonce-tezreader'; style-src 'unsafe-inline'; img-src * data:; font-src *;" />
+  <title>रीडर मोड</title>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: Georgia, "Noto Serif", serif;
+      background: #f5f1e8;
+      color: #2b2b2b;
+    }
+    @media (prefers-color-scheme: dark) {
+      body { background: #22242a; color: #d8dadf; }
+      a { color: #8ab8f5; }
+    }
+    .top {
+      max-width: 720px;
+      margin: 0 auto;
+      padding: 28px 20px 0 20px;
+      font-family: "Segoe UI", system-ui, sans-serif;
+    }
+    .top .src { font-size: 13px; opacity: 0.6; word-break: break-all; }
+    h1.title { font-size: 30px; line-height: 1.25; margin: 10px 0 6px 0; }
+    hr { border: none; border-top: 1px solid rgba(128,128,128,0.35); margin: 20px auto; max-width: 720px; }
+    #content {
+      max-width: 720px;
+      margin: 0 auto;
+      padding: 0 20px 60px 20px;
+      font-size: 19px;
+      line-height: 1.7;
+    }
+    #content img { max-width: 100%; height: auto; border-radius: 6px; }
+    #content pre { overflow-x: auto; background: rgba(128,128,128,0.15); padding: 12px; border-radius: 6px; font-size: 14px; }
+    #content table { max-width: 100%; overflow-x: auto; display: block; }
+    .empty { text-align: center; padding: 80px 20px; font-family: "Segoe UI", sans-serif; opacity: 0.6; }
+  </style>
+</head>
+<body>
+  <div class="top">
+    <div class="src" id="src"></div>
+    <h1 class="title" id="title"></h1>
+  </div>
+  <hr />
+  <div id="content"></div>
+  <script nonce="tezreader">
+    (async () => {
+      const data = await window.tez.list('reader');
+      if (!data || !data.html) {
+        document.getElementById('content').innerHTML =
+          '<div class="empty">पढ़ने के लिए कुछ नहीं मिला — किसी आर्टिकल वाले पेज पर 📖 बटन दबाएँ।</div>';
+        return;
+      }
+      document.title = (data.title || 'रीडर मोड') + ' — रीडर';
+      document.getElementById('title').textContent = data.title || '';
+      document.getElementById('src').textContent = data.url || '';
+      document.getElementById('content').innerHTML = data.html;
+    })();
+  </script>
+</body>
+</html>
