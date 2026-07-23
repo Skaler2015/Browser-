@@ -332,20 +332,44 @@ document.getElementById('findclose').addEventListener('click', closeFind);
 // Upload sidebar (custom file picker)
 // ---------------------------------------------------------------------------
 const sidebar = document.getElementById('sidebar');
-const sbCwd = document.getElementById('sb-cwd');
+const sbPathInput = document.getElementById('sb-pathinput');
 const sbUp = document.getElementById('sb-up');
+const sbBack = document.getElementById('sb-back');
+const sbFwd = document.getElementById('sb-fwd');
 const sbStar = document.getElementById('sb-star');
 const sbList = document.getElementById('sb-list');
 const sbFavRow = document.getElementById('sb-fav-row');
 const sbQuickRow = document.getElementById('sb-quick-row');
+const sbSearch = document.getElementById('sb-search');
+const sbSort = document.getElementById('sb-sort');
+const sbViewBtn = document.getElementById('sb-view');
+const sbAcceptBar = document.getElementById('sb-accept');
 const sbChoose = document.getElementById('sb-choose');
 const sbCount = document.getElementById('sb-count');
 const sbPreviewEl = document.getElementById('sb-preview');
+
+const SB_IMG = new Set(['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp', 'svg', 'ico', 'avif']);
+const SB_VID = new Set(['mp4', 'webm', 'mov', 'mkv', 'avi', 'm4v', 'ogv']);
+const SB_AUD = new Set(['mp3', 'wav', 'm4a', 'ogg', 'oga', 'flac', 'aac']);
+const SB_MIME_EXT = {
+  'image/png': 'png', 'image/jpeg': 'jpg', 'image/jpg': 'jpg', 'image/gif': 'gif',
+  'image/webp': 'webp', 'image/svg+xml': 'svg', 'application/pdf': 'pdf',
+  'text/plain': 'txt', 'text/csv': 'csv', 'application/json': 'json',
+  'application/msword': 'doc', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document': 'docx',
+  'application/vnd.ms-excel': 'xls', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': 'xlsx',
+};
 
 let sbCurDir = '';
 let sbParent = null;
 let sbFavs = [];
 let sbMultiple = false;
+let sbEntries = []; // raw entries of the current view
+let sbMode = 'dir'; // 'dir' | 'recent'
+let sbGrid = false;
+let sbAccept = null; // { match(name), label } or null
+let sbAcceptOff = false; // user chose "show all"
+let sbHistory = [];
+let sbHistPtr = -1;
 const sbSelected = new Set();
 
 function sbFmtSize(n) {
@@ -358,18 +382,60 @@ function sbFmtSize(n) {
   }
   return n.toFixed(i ? 1 : 0) + ' ' + u[i];
 }
+function sbExt(name) {
+  return (name.split('.').pop() || '').toLowerCase();
+}
 function sbExtIcon(name) {
-  const e = (name.split('.').pop() || '').toLowerCase();
-  if (['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp', 'svg'].includes(e)) return '🖼';
-  if (['pdf'].includes(e)) return '📕';
+  const e = sbExt(name);
+  if (SB_IMG.has(e)) return '🖼';
+  if (e === 'pdf') return '📕';
   if (['doc', 'docx', 'odt', 'rtf'].includes(e)) return '📘';
   if (['xls', 'xlsx', 'csv'].includes(e)) return '📗';
   if (['ppt', 'pptx'].includes(e)) return '📙';
-  if (['mp3', 'wav', 'm4a', 'ogg'].includes(e)) return '🎵';
-  if (['mp4', 'mkv', 'mov', 'avi', 'webm'].includes(e)) return '🎬';
+  if (SB_AUD.has(e)) return '🎵';
+  if (SB_VID.has(e)) return '🎬';
   if (['zip', 'rar', '7z', 'tar', 'gz'].includes(e)) return '🗜';
-  if (['txt', 'md'].includes(e)) return '📄';
   return '📄';
+}
+
+// Turn an <input accept="..."> value into a matcher + a friendly Hindi label.
+function buildAcceptFilter(accept) {
+  if (!accept || !accept.trim()) return null;
+  const toks = accept.split(',').map((s) => s.trim().toLowerCase()).filter(Boolean);
+  const exts = new Set();
+  const cats = new Set();
+  let any = false;
+  for (const t of toks) {
+    if (t === '*/*' || t === '*') any = true;
+    else if (t.endsWith('/*')) cats.add(t.slice(0, t.indexOf('/')));
+    else if (t.startsWith('.')) exts.add(t.slice(1));
+    else if (SB_MIME_EXT[t]) exts.add(SB_MIME_EXT[t]);
+    else if (t.includes('/')) cats.add(t.split('/')[0]);
+  }
+  if (any || (!exts.size && !cats.size)) return null;
+  const catSets = { image: SB_IMG, video: SB_VID, audio: SB_AUD };
+  const catName = { image: 'फ़ोटो', video: 'वीडियो', audio: 'ऑडियो', text: 'टेक्स्ट', application: 'दस्तावेज़' };
+  const labels = [];
+  cats.forEach((c) => labels.push(catName[c] || c));
+  exts.forEach((e) => labels.push('.' + e));
+  return {
+    label: labels.join(', '),
+    match(name) {
+      const e = sbExt(name);
+      if (exts.has(e)) return true;
+      for (const c of cats) {
+        if (catSets[c] && catSets[c].has(e)) return true;
+        if (!catSets[c]) return true; // unknown category -> don't hide
+      }
+      return false;
+    },
+  };
+}
+
+function positionSidebar() {
+  const findH = findbar.classList.contains('open') ? findbar.offsetHeight : 0;
+  sidebar.style.top = tabstrip.offsetHeight + document.getElementById('navbar').offsetHeight + findH + 'px';
+  sidebar.style.bottom = '0';
 }
 
 let sbPreviewToken = 0;
@@ -383,7 +449,7 @@ async function sbPreview(pth) {
   sbPreviewEl.classList.add('show');
   sbPreviewEl.innerHTML = '<div class="pvinfo">प्रीव्यू लोड हो रहा…</div>';
   const info = await window.browser.fsPreview(pth);
-  if (token !== sbPreviewToken) return; // a newer click superseded this one
+  if (token !== sbPreviewToken) return;
   sbPreviewEl.innerHTML = '';
   if (!info || info.kind === 'none') {
     sbPreviewEl.classList.remove('show');
@@ -426,29 +492,11 @@ async function sbPreview(pth) {
   }
 }
 
-function positionSidebar() {
-  const findH = findbar.classList.contains('open') ? findbar.offsetHeight : 0;
-  sidebar.style.top = tabstrip.offsetHeight + document.getElementById('navbar').offsetHeight + findH + 'px';
-  sidebar.style.bottom = '0';
-}
-
-async function sbLoad(dir) {
-  const data = await window.browser.fsList(dir);
-  if (!data) return;
-  sbPreview(null); // moving folders clears any open preview
-  sbCurDir = data.path;
-  sbParent = data.parent;
-  sbFavs = data.favorites || [];
-  sbCwd.textContent = data.path;
-  sbCwd.title = data.path;
-  sbUp.disabled = !data.parent;
-  sbStar.textContent = sbFavs.some((f) => f.path === data.path) ? '★' : '☆';
-  sbSelected.clear();
-  updateChooseBtn();
-
-  // favorites
+function renderChips() {
   sbFavRow.innerHTML = '';
-  if (!sbFavs.length) sbFavRow.innerHTML = '<span style="font-size:11px;color:var(--dim)">कोई फ़ेवरेट नहीं — ऊपर ☆ से जोड़ें</span>';
+  if (!sbFavs.length) {
+    sbFavRow.innerHTML = '<span style="font-size:11px;color:var(--dim)">कोई फ़ेवरेट नहीं — ऊपर ☆ से जोड़ें</span>';
+  }
   for (const f of sbFavs) {
     const chip = document.createElement('div');
     chip.className = 'chip';
@@ -462,68 +510,88 @@ async function sbLoad(dir) {
     x.addEventListener('click', async (e) => {
       e.stopPropagation();
       sbFavs = await window.browser.fsFavorite('remove', f.path);
-      sbLoad(sbCurDir);
+      renderChips();
+      updateStar();
     });
     chip.append(label, x);
     sbFavRow.appendChild(chip);
   }
+}
 
-  // quick access
-  sbQuickRow.innerHTML = '';
-  for (const q of data.quick || []) {
-    const chip = document.createElement('div');
-    chip.className = 'chip';
-    chip.textContent = q.name;
-    chip.addEventListener('click', () => sbLoad(q.path));
-    sbQuickRow.appendChild(chip);
-  }
+function updateStar() {
+  sbStar.textContent = sbFavs.some((f) => f.path === sbCurDir) ? '★' : '☆';
+  sbStar.style.display = sbMode === 'dir' ? '' : 'none';
+}
 
-  // entries
+function updateNavButtons() {
+  sbBack.disabled = sbHistPtr <= 0;
+  sbFwd.disabled = sbHistPtr >= sbHistory.length - 1;
+  sbUp.disabled = sbMode !== 'dir' || !sbParent;
+}
+
+// Filter + sort the raw entries and paint them.
+function applyView() {
+  const q = sbSearch.value.trim().toLowerCase();
+  let items = sbEntries.slice();
+
+  if (q) items = items.filter((it) => it.name.toLowerCase().includes(q));
+  if (sbAccept && !sbAcceptOff) items = items.filter((it) => it.isDir || sbAccept.match(it.name));
+
+  const dirs = items.filter((it) => it.isDir);
+  const files = items.filter((it) => !it.isDir);
+  const mode = sbSort.value;
+  const byName = (a, b) => a.name.localeCompare(b.name, 'hi');
+  const byDate = (a, b) => (b.mtime || 0) - (a.mtime || 0);
+  const bySize = (a, b) => (b.size || 0) - (a.size || 0);
+  const cmp = mode === 'date' ? byDate : mode === 'size' ? bySize : byName;
+  dirs.sort(mode === 'name' ? byName : cmp);
+  files.sort(cmp);
+  const ordered = sbMode === 'recent' ? files : dirs.concat(files);
+
+  sbList.classList.toggle('grid', sbGrid);
   sbList.innerHTML = '';
-  if (data.error) {
-    sbList.innerHTML = '<div id="sb-empty">यह फ़ोल्डर नहीं खुल पाया</div>';
+  if (!ordered.length) {
+    sbList.innerHTML = '<div id="sb-empty">' + (q ? 'कुछ नहीं मिला' : 'यहाँ दिखाने को कुछ नहीं') + '</div>';
     return;
   }
-  if (!data.entries.length) {
-    sbList.innerHTML = '<div id="sb-empty">यह फ़ोल्डर खाली है</div>';
-    return;
-  }
-  for (const item of data.entries) {
+  for (const item of ordered) {
     const row = document.createElement('div');
-    row.className = 'fitem';
-    const ic = document.createElement('span');
-    ic.className = 'ic';
-    ic.textContent = item.isDir ? '📁' : sbExtIcon(item.name);
+    row.className = 'fitem' + (sbSelected.has(item.path) ? ' sel' : '');
+
+    if (sbGrid && item.url) {
+      const img = document.createElement('img');
+      img.className = 'thumb';
+      img.src = item.url;
+      img.onerror = () => {
+        img.replaceWith(Object.assign(document.createElement('span'), { className: 'ic', textContent: item.isDir ? '📁' : sbExtIcon(item.name) }));
+      };
+      row.appendChild(img);
+    } else if (!sbGrid && item.url) {
+      const img = document.createElement('img');
+      img.className = 'thumb';
+      img.src = item.url;
+      img.onerror = () => {
+        img.replaceWith(Object.assign(document.createElement('span'), { className: 'ic', textContent: sbExtIcon(item.name) }));
+      };
+      row.appendChild(img);
+    } else {
+      const ic = document.createElement('span');
+      ic.className = 'ic';
+      ic.textContent = item.isDir ? '📁' : sbExtIcon(item.name);
+      row.appendChild(ic);
+    }
+
     const nm = document.createElement('span');
     nm.className = 'nm';
     nm.textContent = item.name;
-    row.append(ic, nm);
+    row.appendChild(nm);
+
     if (!item.isDir) {
       const sz = document.createElement('span');
       sz.className = 'sz';
       sz.textContent = sbFmtSize(item.size);
       row.appendChild(sz);
-      row.addEventListener('click', () => {
-        if (!sbMultiple) {
-          sbSelected.clear();
-          sbSelected.add(item.path);
-        } else if (sbSelected.has(item.path)) {
-          sbSelected.delete(item.path);
-        } else {
-          sbSelected.add(item.path);
-        }
-        [...sbList.children].forEach((c) => c.classList.remove('sel'));
-        if (sbSelected.has(item.path)) row.classList.add('sel');
-        else if (!sbMultiple) row.classList.remove('sel');
-        if (sbMultiple) {
-          // re-mark all selected
-          [...sbList.children].forEach((c, i) => {
-            if (data.entries[i] && sbSelected.has(data.entries[i].path)) c.classList.add('sel');
-          });
-        }
-        updateChooseBtn();
-        sbPreview(item.path);
-      });
+      row.addEventListener('click', () => selectFile(item, row));
       row.addEventListener('dblclick', () => {
         sbSelected.clear();
         sbSelected.add(item.path);
@@ -536,10 +604,85 @@ async function sbLoad(dir) {
   }
 }
 
+function selectFile(item, row) {
+  if (!sbMultiple) {
+    sbSelected.clear();
+    sbSelected.add(item.path);
+    [...sbList.children].forEach((c) => c.classList.remove('sel'));
+    row.classList.add('sel');
+  } else if (sbSelected.has(item.path)) {
+    sbSelected.delete(item.path);
+    row.classList.remove('sel');
+  } else {
+    sbSelected.add(item.path);
+    row.classList.add('sel');
+  }
+  updateChooseBtn();
+  sbPreview(item.path);
+}
+
+function setEntries(entries) {
+  sbEntries = entries || [];
+  sbSelected.clear();
+  updateChooseBtn();
+  applyView();
+}
+
+async function sbLoad(dir, record = true) {
+  const data = await window.browser.fsList(dir);
+  if (!data) return;
+  sbPreview(null);
+  sbMode = 'dir';
+  sbCurDir = data.path;
+  sbParent = data.parent;
+  sbFavs = data.favorites || [];
+  sbPathInput.value = data.path;
+  if (record) {
+    sbHistory = sbHistory.slice(0, sbHistPtr + 1);
+    if (sbHistory[sbHistPtr] !== data.path) {
+      sbHistory.push(data.path);
+      sbHistPtr = sbHistory.length - 1;
+    }
+  }
+  renderChips();
+  updateStar();
+  updateNavButtons();
+  renderQuick(data.quick || []);
+  setEntries(data.entries);
+}
+
+async function loadRecent() {
+  sbPreview(null);
+  sbMode = 'recent';
+  sbCurDir = '';
+  sbParent = null;
+  sbPathInput.value = '';
+  updateStar();
+  updateNavButtons();
+  const items = (await window.browser.fsRecent()) || [];
+  setEntries(items);
+}
+
+function renderQuick(quick) {
+  sbQuickRow.innerHTML = '';
+  const recentChip = document.createElement('div');
+  recentChip.className = 'chip';
+  recentChip.textContent = '🕘 हाल की फ़ाइलें';
+  recentChip.addEventListener('click', loadRecent);
+  sbQuickRow.appendChild(recentChip);
+  for (const q of quick) {
+    const chip = document.createElement('div');
+    chip.className = 'chip';
+    chip.textContent = q.name;
+    chip.addEventListener('click', () => sbLoad(q.path));
+    sbQuickRow.appendChild(chip);
+  }
+}
+
 function updateChooseBtn() {
   const n = sbSelected.size;
   sbChoose.disabled = n === 0;
-  sbChoose.textContent = n > 1 ? `${n} फ़ाइलें अपलोड करें` : 'अपलोड करें';
+  sbChoose.textContent = n > 1 ? n + ' फ़ाइलें अपलोड करें' : 'अपलोड करें';
   sbCount.textContent = n ? n + ' चुनी गई' : '';
 }
 
@@ -549,22 +692,71 @@ function doChoose() {
 }
 
 sbUp.addEventListener('click', () => sbParent && sbLoad(sbParent));
+sbBack.addEventListener('click', () => {
+  if (sbHistPtr > 0) {
+    sbHistPtr--;
+    sbLoad(sbHistory[sbHistPtr], false);
+  }
+});
+sbFwd.addEventListener('click', () => {
+  if (sbHistPtr < sbHistory.length - 1) {
+    sbHistPtr++;
+    sbLoad(sbHistory[sbHistPtr], false);
+  }
+});
+sbPathInput.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter' && sbPathInput.value.trim()) sbLoad(sbPathInput.value.trim());
+});
 sbStar.addEventListener('click', async () => {
+  if (sbMode !== 'dir') return;
   const isFav = sbFavs.some((f) => f.path === sbCurDir);
   sbFavs = await window.browser.fsFavorite(isFav ? 'remove' : 'add', sbCurDir);
-  sbStar.textContent = sbFavs.some((f) => f.path === sbCurDir) ? '★' : '☆';
-  sbLoad(sbCurDir);
+  renderChips();
+  updateStar();
+});
+sbSearch.addEventListener('input', applyView);
+sbSort.addEventListener('change', applyView);
+sbViewBtn.addEventListener('click', () => {
+  sbGrid = !sbGrid;
+  sbViewBtn.classList.toggle('grid', sbGrid);
+  applyView();
 });
 sbChoose.addEventListener('click', doChoose);
 document.getElementById('sb-cancel').addEventListener('click', () => window.browser.uploadCancel());
 
+function showAcceptBar() {
+  if (sbAccept) {
+    sbAcceptBar.classList.add('show');
+    sbAcceptBar.innerHTML = '';
+    const txt = document.createElement('span');
+    txt.textContent = 'इस साइट को चाहिए: ' + sbAccept.label;
+    const link = document.createElement('a');
+    link.textContent = sbAcceptOff ? 'सिर्फ़ ज़रूरी दिखाएँ' : 'सब दिखाएँ';
+    link.addEventListener('click', () => {
+      sbAcceptOff = !sbAcceptOff;
+      link.textContent = sbAcceptOff ? 'सिर्फ़ ज़रूरी दिखाएँ' : 'सब दिखाएँ';
+      applyView();
+    });
+    sbAcceptBar.append(txt, link);
+  } else {
+    sbAcceptBar.classList.remove('show');
+    sbAcceptBar.innerHTML = '';
+  }
+}
+
 window.browser.onUploadOpen((d) => {
   sbMultiple = !!(d && d.multiple);
+  sbAccept = buildAcceptFilter(d && d.accept);
+  sbAcceptOff = false;
   document.getElementById('sb-hint').textContent = sbMultiple
     ? 'एक या कई फ़ाइलें चुनें, फिर "अपलोड करें" दबाएँ'
     : 'फ़ोल्डर खोलें, फ़ाइल चुनें, फिर "अपलोड करें" दबाएँ';
+  showAcceptBar();
   sidebar.classList.add('open');
   positionSidebar();
+  sbHistory = [];
+  sbHistPtr = -1;
+  sbSearch.value = '';
   sbLoad('');
 });
 window.browser.onUploadClose(() => {

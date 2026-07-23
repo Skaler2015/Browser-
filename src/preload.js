@@ -31,6 +31,7 @@ contextBridge.exposeInMainWorld('browser', {
   onFindResult: (cb) => ipcRenderer.on('find:result', (_e, r) => cb(r)),
   // upload sidebar (custom file picker)
   fsList: (dir) => ipcRenderer.invoke('fs:list', dir),
+  fsRecent: () => ipcRenderer.invoke('fs:recent'),
   fsPreview: (p) => ipcRenderer.invoke('fs:preview', p),
   fsFavorite: (action, path) => ipcRenderer.invoke('fs:favorite', { action, path }),
   uploadChoose: (paths) => ipcRenderer.send('upload:choose', paths),

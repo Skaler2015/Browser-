@@ -179,6 +179,7 @@ const SIDEBAR_W = 340;
 let sidebarWidth = 0;
 let uploadTargetId = null;
 const favFolders = store.load('favfolders', []); // favourite folder paths
+const recentFiles = store.load('recentfiles', []); // [{path, name, ts}] recently uploaded/downloaded
 let lastBrowseDir = ''; // remember where the user browsed last
 
 // ---------------------------------------------------------------------------
@@ -560,6 +561,7 @@ function wireSession(ses) {
         analytics.downloads.count += 1;
         analytics.downloads.bytes += entry.received;
         store.saveDebounced('analytics', analytics, 5000);
+        addRecentFiles([entry.savePath]);
       }
       downloadItems.delete(id);
       sendStateThrottled();
@@ -1890,14 +1892,30 @@ function ensureUploadIntercept(tab) {
   ]);
 }
 
-function onFileChooser(tab, params) {
+async function onFileChooser(tab, params) {
   if (params.backendNodeId == null) {
     // Can't inject without a node handle — let the page try again natively.
     return;
   }
+  // Read the input's `accept` attribute so the sidebar can filter file types.
+  let accept = '';
+  try {
+    const wc = tab.view.webContents;
+    const r = await wc.debugger.sendCommand('DOM.resolveNode', { backendNodeId: params.backendNodeId });
+    if (r && r.object && r.object.objectId) {
+      const res = await wc.debugger.sendCommand('Runtime.callFunctionOn', {
+        objectId: r.object.objectId,
+        functionDeclaration: 'function(){return this.accept||""}',
+        returnByValue: true,
+      });
+      accept = (res && res.result && res.result.value) || '';
+      wc.debugger.sendCommand('Runtime.releaseObject', { objectId: r.object.objectId }).catch(() => {});
+    }
+  } catch {}
   tab.fileChooser = {
     backendNodeId: params.backendNodeId,
     multiple: params.mode === 'selectMultiple',
+    accept,
   };
   if (tab.id !== activeTabId) activateTab(tab.id);
   openUploadSidebar(tab);
@@ -1907,7 +1925,12 @@ function openUploadSidebar(tab) {
   uploadTargetId = tab.id;
   sidebarWidth = SIDEBAR_W;
   layout();
-  if (win) win.webContents.send('upload:open', { multiple: !!(tab.fileChooser && tab.fileChooser.multiple) });
+  if (win) {
+    win.webContents.send('upload:open', {
+      multiple: !!(tab.fileChooser && tab.fileChooser.multiple),
+      accept: (tab.fileChooser && tab.fileChooser.accept) || '',
+    });
+  }
 }
 
 function closeUploadSidebar() {
@@ -1928,8 +1951,20 @@ function chooseUploadFiles(paths) {
   tab.view.webContents.debugger
     .sendCommand('DOM.setFileInputFiles', { files: send, backendNodeId: tab.fileChooser.backendNodeId })
     .catch((err) => console.warn('setFileInputFiles:', err.message));
+  addRecentFiles(send);
   tab.fileChooser = null;
   closeUploadSidebar();
+}
+
+function addRecentFiles(paths) {
+  for (const p of paths) {
+    if (typeof p !== 'string') continue;
+    const i = recentFiles.findIndex((r) => r.path === p);
+    if (i >= 0) recentFiles.splice(i, 1);
+    recentFiles.unshift({ path: p, name: path.basename(p), ts: Date.now() });
+  }
+  while (recentFiles.length > 40) recentFiles.pop();
+  store.save('recentfiles', recentFiles);
 }
 
 function cancelUpload() {
@@ -1964,14 +1999,20 @@ function listDir(dir) {
       .readdirSync(target, { withFileTypes: true })
       .filter((d) => !d.name.startsWith('.'))
       .map((d) => {
+        const full = path.join(target, d.name);
         let isDir = d.isDirectory();
         let size = 0;
+        let mtime = 0;
         try {
-          const st = fs.statSync(path.join(target, d.name));
+          const st = fs.statSync(full);
           isDir = st.isDirectory();
           size = st.size;
+          mtime = st.mtimeMs;
         } catch {}
-        return { name: d.name, isDir, size, path: path.join(target, d.name) };
+        const ext = (path.extname(d.name).slice(1) || '').toLowerCase();
+        const e = { name: d.name, isDir, size, mtime, path: full };
+        if (!isDir && PV_IMG.has(ext)) e.url = pathToFileURL(full).href; // grid thumbnail
+        return e;
       })
       .sort((a, b) => (a.isDir !== b.isDir ? (a.isDir ? -1 : 1) : a.name.localeCompare(b.name, 'hi')));
   } catch (err) {
@@ -2024,6 +2065,20 @@ ipcMain.handle('fs:preview', (_e, p) => {
 });
 
 ipcMain.handle('fs:list', (_e, dir) => listDir(dir));
+ipcMain.handle('fs:recent', () => {
+  const out = [];
+  for (const r of recentFiles) {
+    try {
+      const st = fs.statSync(r.path);
+      if (!st.isFile()) continue;
+      const ext = (path.extname(r.path).slice(1) || '').toLowerCase();
+      const e = { name: r.name, isDir: false, size: st.size, mtime: st.mtimeMs, path: r.path };
+      if (PV_IMG.has(ext)) e.url = pathToFileURL(r.path).href;
+      out.push(e);
+    } catch {}
+  }
+  return out.slice(0, 40);
+});
 ipcMain.handle('fs:favorite', (_e, { action, path: p }) => {
   const i = favFolders.indexOf(p);
   if (action === 'add' && i < 0 && p) favFolders.push(p);
