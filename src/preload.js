@@ -29,4 +29,11 @@ contextBridge.exposeInMainWorld('browser', {
   onFocusAddress: (cb) => ipcRenderer.on('focus-address', () => cb()),
   onFindOpen: (cb) => ipcRenderer.on('find:open', () => cb()),
   onFindResult: (cb) => ipcRenderer.on('find:result', (_e, r) => cb(r)),
+  // upload sidebar (custom file picker)
+  fsList: (dir) => ipcRenderer.invoke('fs:list', dir),
+  fsFavorite: (action, path) => ipcRenderer.invoke('fs:favorite', { action, path }),
+  uploadChoose: (paths) => ipcRenderer.send('upload:choose', paths),
+  uploadCancel: () => ipcRenderer.send('upload:cancel'),
+  onUploadOpen: (cb) => ipcRenderer.on('upload:open', (_e, d) => cb(d)),
+  onUploadClose: (cb) => ipcRenderer.on('upload:close', () => cb()),
 });

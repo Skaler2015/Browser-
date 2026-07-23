@@ -174,6 +174,13 @@ let nextDownloadId = 1;
 // Time-machine: hourly local snapshots of open (non-private) tabs
 const timeMachine = store.load('timemachine', []); // [{ts, urls:[...]}]
 
+// Upload sidebar (custom in-browser file picker) state
+const SIDEBAR_W = 340;
+let sidebarWidth = 0;
+let uploadTargetId = null;
+const favFolders = store.load('favfolders', []); // favourite folder paths
+let lastBrowseDir = ''; // remember where the user browsed last
+
 // ---------------------------------------------------------------------------
 // URL helpers
 // ---------------------------------------------------------------------------
@@ -1234,6 +1241,8 @@ function createTab(url = START_PAGE, opts = {}) {
     sleepTitle: '',
     favicon: '',
     htmlFullscreen: false,
+    dbg: false,
+    fileChooser: null,
     lastActive: Date.now(),
   };
   tabs.set(id, tab);
@@ -1300,6 +1309,17 @@ function createTab(url = START_PAGE, opts = {}) {
     tab.htmlFullscreen = false;
     layout();
   });
+
+  // Upload sidebar: intercept file pickers via the debugger, yielding to DevTools
+  wc.on('dom-ready', () => ensureUploadIntercept(tab));
+  wc.on('devtools-opened', () => {
+    if (tab.dbg) {
+      try {
+        wc.debugger.detach();
+      } catch {}
+    }
+  });
+  wc.on('devtools-closed', () => setTimeout(() => ensureUploadIntercept(tab), 300));
 
   // Malware check + HTTPS-only upgrade for page-initiated navigation
   wc.on('will-navigate', (e, target) => {
@@ -1401,6 +1421,7 @@ function closeTab(id) {
     if (closedTabs.length > 50) closedTabs.shift();
   }
   if (splitTabId === id) splitTabId = null;
+  if (uploadTargetId === id) closeUploadSidebar();
   const orderIdx = tabOrder.indexOf(id);
   win.contentView.removeChildView(tab.view);
   tab.view.webContents.close();
@@ -1478,14 +1499,15 @@ function layout() {
     tab.view.setBounds({ x: 0, y: 0, width: w, height: h });
     return;
   }
+  const availW = Math.max(0, w - sidebarWidth); // reserve the right strip for the sidebar
   const split = splitTabId != null && splitTabId !== activeTabId ? tabs.get(splitTabId) : null;
   const contentH = Math.max(0, h - chromeHeight);
   if (split) {
-    const half = Math.floor(w / 2);
+    const half = Math.floor(availW / 2);
     tab.view.setBounds({ x: 0, y: chromeHeight, width: half, height: contentH });
-    split.view.setBounds({ x: half, y: chromeHeight, width: w - half, height: contentH });
+    split.view.setBounds({ x: half, y: chromeHeight, width: availW - half, height: contentH });
   } else {
-    tab.view.setBounds({ x: 0, y: chromeHeight, width: w, height: contentH });
+    tab.view.setBounds({ x: 0, y: chromeHeight, width: availW, height: contentH });
   }
 }
 
@@ -1680,22 +1702,25 @@ async function fullPageScreenshot() {
   const tab = activeTab();
   if (!tab) return;
   const wc = tab.view.webContents;
+  const owned = !tab.dbg; // reuse the upload-intercept debugger if it's attached
   try {
-    wc.debugger.attach('1.3');
+    if (owned) wc.debugger.attach('1.3');
     const { data } = await wc.debugger.sendCommand('Page.captureScreenshot', {
       format: 'png',
       captureBeyondViewport: true,
     });
-    wc.debugger.detach();
+    if (owned) wc.debugger.detach();
     const { canceled, filePath } = await dialog.showSaveDialog(win, {
       defaultPath: (wc.getTitle() || 'screenshot').replace(/[\\/:*?"<>|]/g, '_') + '.png',
       filters: [{ name: 'PNG', extensions: ['png'] }],
     });
     if (!canceled && filePath) fs.writeFileSync(filePath, Buffer.from(data, 'base64'));
   } catch (err) {
-    try {
-      wc.debugger.detach();
-    } catch {}
+    if (owned) {
+      try {
+        wc.debugger.detach();
+      } catch {}
+    }
     dialog.showErrorBox('स्क्रीनशॉट नहीं बन पाया', String(err.message || err));
   }
 }
@@ -1838,6 +1863,142 @@ function toggleMute(id) {
   tab.view.webContents.setAudioMuted(tab.muted);
   sendState();
 }
+
+// ---------------------------------------------------------------------------
+// Upload sidebar: intercept a page's file-picker and show our own folder view.
+// Uses CDP: Page.setInterceptFileChooserDialog + DOM.setFileInputFiles.
+// ---------------------------------------------------------------------------
+function ensureUploadIntercept(tab) {
+  const wc = tab.view.webContents;
+  if (tab.dbg || wc.isDestroyed() || wc.isDevToolsOpened()) return;
+  try {
+    wc.debugger.attach('1.3');
+  } catch {
+    return;
+  }
+  tab.dbg = true;
+  wc.debugger.on('detach', () => {
+    tab.dbg = false;
+  });
+  wc.debugger.on('message', (_e, method, params) => {
+    if (method === 'Page.fileChooserOpened') onFileChooser(tab, params);
+  });
+  Promise.allSettled([
+    wc.debugger.sendCommand('Page.enable'),
+    wc.debugger.sendCommand('DOM.enable'),
+    wc.debugger.sendCommand('Page.setInterceptFileChooserDialog', { enabled: true }),
+  ]);
+}
+
+function onFileChooser(tab, params) {
+  if (params.backendNodeId == null) {
+    // Can't inject without a node handle — let the page try again natively.
+    return;
+  }
+  tab.fileChooser = {
+    backendNodeId: params.backendNodeId,
+    multiple: params.mode === 'selectMultiple',
+  };
+  if (tab.id !== activeTabId) activateTab(tab.id);
+  openUploadSidebar(tab);
+}
+
+function openUploadSidebar(tab) {
+  uploadTargetId = tab.id;
+  sidebarWidth = SIDEBAR_W;
+  layout();
+  if (win) win.webContents.send('upload:open', { multiple: !!(tab.fileChooser && tab.fileChooser.multiple) });
+}
+
+function closeUploadSidebar() {
+  sidebarWidth = 0;
+  uploadTargetId = null;
+  layout();
+  if (win) win.webContents.send('upload:close');
+}
+
+function chooseUploadFiles(paths) {
+  const tab = tabs.get(uploadTargetId);
+  if (!tab || !tab.fileChooser) {
+    closeUploadSidebar();
+    return;
+  }
+  const files = Array.isArray(paths) ? paths.filter((p) => typeof p === 'string') : [];
+  const send = tab.fileChooser.multiple ? files : files.slice(0, 1);
+  tab.view.webContents.debugger
+    .sendCommand('DOM.setFileInputFiles', { files: send, backendNodeId: tab.fileChooser.backendNodeId })
+    .catch((err) => console.warn('setFileInputFiles:', err.message));
+  tab.fileChooser = null;
+  closeUploadSidebar();
+}
+
+function cancelUpload() {
+  const tab = tabs.get(uploadTargetId);
+  if (tab && tab.fileChooser) {
+    tab.view.webContents.debugger
+      .sendCommand('DOM.setFileInputFiles', { files: [], backendNodeId: tab.fileChooser.backendNodeId })
+      .catch(() => {});
+    tab.fileChooser = null;
+  }
+  closeUploadSidebar();
+}
+
+function quickAccess() {
+  const names = { home: '🏠 होम', desktop: '🖥 डेस्कटॉप', documents: '📄 दस्तावेज़', downloads: '⬇ डाउनलोड', pictures: '🖼 तस्वीरें' };
+  const out = [];
+  for (const key of Object.keys(names)) {
+    try {
+      const p = app.getPath(key);
+      if (p && fs.existsSync(p)) out.push({ name: names[key], path: p });
+    } catch {}
+  }
+  return out;
+}
+
+function listDir(dir) {
+  let target = dir && fs.existsSync(dir) ? dir : lastBrowseDir && fs.existsSync(lastBrowseDir) ? lastBrowseDir : app.getPath('home');
+  let entries = [];
+  let error = null;
+  try {
+    entries = fs
+      .readdirSync(target, { withFileTypes: true })
+      .filter((d) => !d.name.startsWith('.'))
+      .map((d) => {
+        let isDir = d.isDirectory();
+        let size = 0;
+        try {
+          const st = fs.statSync(path.join(target, d.name));
+          isDir = st.isDirectory();
+          size = st.size;
+        } catch {}
+        return { name: d.name, isDir, size, path: path.join(target, d.name) };
+      })
+      .sort((a, b) => (a.isDir !== b.isDir ? (a.isDir ? -1 : 1) : a.name.localeCompare(b.name, 'hi')));
+  } catch (err) {
+    error = err.message;
+  }
+  lastBrowseDir = target;
+  const parent = path.dirname(target);
+  return {
+    path: target,
+    parent: parent !== target ? parent : null,
+    entries,
+    error,
+    favorites: favFolders.map((p) => ({ path: p, name: path.basename(p) || p })),
+    quick: quickAccess(),
+  };
+}
+
+ipcMain.handle('fs:list', (_e, dir) => listDir(dir));
+ipcMain.handle('fs:favorite', (_e, { action, path: p }) => {
+  const i = favFolders.indexOf(p);
+  if (action === 'add' && i < 0 && p) favFolders.push(p);
+  else if (action === 'remove' && i >= 0) favFolders.splice(i, 1);
+  store.save('favfolders', favFolders);
+  return favFolders.map((x) => ({ path: x, name: path.basename(x) || x }));
+});
+ipcMain.on('upload:choose', (_e, paths) => chooseUploadFiles(paths));
+ipcMain.on('upload:cancel', cancelUpload);
 
 // ---------------------------------------------------------------------------
 // IPC: toolbar

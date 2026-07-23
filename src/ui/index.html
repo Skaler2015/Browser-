@@ -306,6 +306,77 @@
     #mic.listening { background: #6e3030; color: #fff; animation: pulse 1s infinite; }
     @keyframes pulse { 50% { opacity: 0.5; } }
 
+    /* ---- upload sidebar (custom file picker) ---- */
+    #sidebar {
+      display: none;
+      position: fixed;
+      right: 0;
+      width: 340px;
+      background: var(--bar);
+      border-left: 1px solid var(--hover);
+      flex-direction: column;
+      z-index: 20;
+    }
+    #sidebar.open { display: flex; }
+    #sb-head {
+      padding: 12px 14px 10px 14px;
+      border-bottom: 1px solid var(--hover);
+    }
+    #sb-title { font-size: 14px; font-weight: 600; margin-bottom: 4px; }
+    #sb-hint { font-size: 11px; color: var(--dim); }
+    #sb-path {
+      display: flex; align-items: center; gap: 6px;
+      padding: 8px 12px;
+      font-size: 12px;
+      border-bottom: 1px solid var(--hover);
+    }
+    #sb-up {
+      border: none; background: var(--hover); color: var(--text);
+      width: 30px; height: 26px; border-radius: 6px; cursor: pointer; flex-shrink: 0;
+    }
+    #sb-up:hover { background: var(--accent); color: #fff; }
+    #sb-up:disabled { opacity: 0.4; cursor: default; }
+    #sb-cwd { flex: 1; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; direction: rtl; text-align: left; }
+    #sb-star {
+      border: none; background: transparent; color: #ffd764;
+      font-size: 16px; cursor: pointer; flex-shrink: 0;
+    }
+    #sb-quick, #sb-fav { padding: 6px 10px; border-bottom: 1px solid var(--hover); }
+    #sb-quick .lbl, #sb-fav .lbl { font-size: 10px; color: var(--dim); margin: 2px 4px; text-transform: uppercase; }
+    .chiprow { display: flex; flex-wrap: wrap; gap: 5px; }
+    .chip {
+      font-size: 11px; background: var(--input); color: var(--text);
+      border-radius: 12px; padding: 4px 10px; cursor: pointer;
+      display: flex; align-items: center; gap: 5px; max-width: 100%;
+    }
+    .chip:hover { background: var(--hover); }
+    .chip span { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; max-width: 120px; }
+    .chip .x { color: var(--dim); }
+    .chip .x:hover { color: #ff9d8f; }
+    #sb-list { flex: 1; overflow-y: auto; }
+    .fitem {
+      display: flex; align-items: center; gap: 9px;
+      padding: 8px 14px; font-size: 13px; cursor: pointer;
+    }
+    .fitem:hover { background: var(--hover); }
+    .fitem.sel { background: rgba(77,127,214,0.28); }
+    .fitem .ic { flex-shrink: 0; width: 18px; text-align: center; }
+    .fitem .nm { flex: 1; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+    .fitem .sz { font-size: 10px; color: var(--dim); flex-shrink: 0; }
+    #sb-empty { padding: 30px 14px; text-align: center; color: var(--dim); font-size: 12px; }
+    #sb-foot {
+      display: flex; gap: 8px; padding: 12px 14px;
+      border-top: 1px solid var(--hover);
+    }
+    #sb-foot button {
+      flex: 1; height: 38px; border: none; border-radius: 8px;
+      font-size: 13px; cursor: pointer;
+    }
+    #sb-choose { background: var(--accent); color: #fff; }
+    #sb-choose:disabled { opacity: 0.45; cursor: default; }
+    #sb-cancel { background: var(--hover); color: var(--text); }
+    #sb-count { font-size: 11px; color: var(--dim); padding: 0 14px 8px 14px; }
+
     /* ---- simple mode: bigger everything, calmer ---- */
     body.simple #navbar { height: 60px; gap: 8px; }
     body.simple #navbar button { width: 44px; height: 44px; font-size: 20px; }
@@ -343,6 +414,33 @@
     <button id="findnext" title="अगला">▼</button>
     <button id="findclose" title="बंद करें">✕</button>
   </div>
+
+  <div id="sidebar">
+    <div id="sb-head">
+      <div id="sb-title">📎 फ़ाइल अपलोड करें</div>
+      <div id="sb-hint">फ़ोल्डर खोलें, फ़ाइल चुनें, फिर "अपलोड करें" दबाएँ</div>
+    </div>
+    <div id="sb-path">
+      <button id="sb-up" title="पिछले फ़ोल्डर में जाएँ">↑</button>
+      <span id="sb-cwd"></span>
+      <button id="sb-star" title="इस फ़ोल्डर को फ़ेवरेट में जोड़ें/हटाएँ">☆</button>
+    </div>
+    <div id="sb-fav">
+      <div class="lbl">⭐ फ़ेवरेट फ़ोल्डर</div>
+      <div class="chiprow" id="sb-fav-row"></div>
+    </div>
+    <div id="sb-quick">
+      <div class="lbl">तेज़ पहुँच</div>
+      <div class="chiprow" id="sb-quick-row"></div>
+    </div>
+    <div id="sb-list"></div>
+    <div id="sb-count"></div>
+    <div id="sb-foot">
+      <button id="sb-choose" disabled>अपलोड करें</button>
+      <button id="sb-cancel">रद्द करें</button>
+    </div>
+  </div>
+
   <script src="renderer.js"></script>
 </body>
 </html>

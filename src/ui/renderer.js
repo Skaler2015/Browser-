@@ -329,6 +329,193 @@ document.getElementById('findprev').addEventListener('click', () => {
 document.getElementById('findclose').addEventListener('click', closeFind);
 
 // ---------------------------------------------------------------------------
+// Upload sidebar (custom file picker)
+// ---------------------------------------------------------------------------
+const sidebar = document.getElementById('sidebar');
+const sbCwd = document.getElementById('sb-cwd');
+const sbUp = document.getElementById('sb-up');
+const sbStar = document.getElementById('sb-star');
+const sbList = document.getElementById('sb-list');
+const sbFavRow = document.getElementById('sb-fav-row');
+const sbQuickRow = document.getElementById('sb-quick-row');
+const sbChoose = document.getElementById('sb-choose');
+const sbCount = document.getElementById('sb-count');
+
+let sbCurDir = '';
+let sbParent = null;
+let sbFavs = [];
+let sbMultiple = false;
+const sbSelected = new Set();
+
+function sbFmtSize(n) {
+  if (!n) return '';
+  const u = ['B', 'KB', 'MB', 'GB'];
+  let i = 0;
+  while (n >= 1024 && i < u.length - 1) {
+    n /= 1024;
+    i++;
+  }
+  return n.toFixed(i ? 1 : 0) + ' ' + u[i];
+}
+function sbExtIcon(name) {
+  const e = (name.split('.').pop() || '').toLowerCase();
+  if (['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp', 'svg'].includes(e)) return '🖼';
+  if (['pdf'].includes(e)) return '📕';
+  if (['doc', 'docx', 'odt', 'rtf'].includes(e)) return '📘';
+  if (['xls', 'xlsx', 'csv'].includes(e)) return '📗';
+  if (['ppt', 'pptx'].includes(e)) return '📙';
+  if (['mp3', 'wav', 'm4a', 'ogg'].includes(e)) return '🎵';
+  if (['mp4', 'mkv', 'mov', 'avi', 'webm'].includes(e)) return '🎬';
+  if (['zip', 'rar', '7z', 'tar', 'gz'].includes(e)) return '🗜';
+  if (['txt', 'md'].includes(e)) return '📄';
+  return '📄';
+}
+
+function positionSidebar() {
+  const findH = findbar.classList.contains('open') ? findbar.offsetHeight : 0;
+  sidebar.style.top = tabstrip.offsetHeight + document.getElementById('navbar').offsetHeight + findH + 'px';
+  sidebar.style.bottom = '0';
+}
+
+async function sbLoad(dir) {
+  const data = await window.browser.fsList(dir);
+  if (!data) return;
+  sbCurDir = data.path;
+  sbParent = data.parent;
+  sbFavs = data.favorites || [];
+  sbCwd.textContent = data.path;
+  sbCwd.title = data.path;
+  sbUp.disabled = !data.parent;
+  sbStar.textContent = sbFavs.some((f) => f.path === data.path) ? '★' : '☆';
+  sbSelected.clear();
+  updateChooseBtn();
+
+  // favorites
+  sbFavRow.innerHTML = '';
+  if (!sbFavs.length) sbFavRow.innerHTML = '<span style="font-size:11px;color:var(--dim)">कोई फ़ेवरेट नहीं — ऊपर ☆ से जोड़ें</span>';
+  for (const f of sbFavs) {
+    const chip = document.createElement('div');
+    chip.className = 'chip';
+    const label = document.createElement('span');
+    label.textContent = '⭐ ' + f.name;
+    label.addEventListener('click', () => sbLoad(f.path));
+    const x = document.createElement('span');
+    x.className = 'x';
+    x.textContent = '✕';
+    x.title = 'फ़ेवरेट से हटाएँ';
+    x.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      sbFavs = await window.browser.fsFavorite('remove', f.path);
+      sbLoad(sbCurDir);
+    });
+    chip.append(label, x);
+    sbFavRow.appendChild(chip);
+  }
+
+  // quick access
+  sbQuickRow.innerHTML = '';
+  for (const q of data.quick || []) {
+    const chip = document.createElement('div');
+    chip.className = 'chip';
+    chip.textContent = q.name;
+    chip.addEventListener('click', () => sbLoad(q.path));
+    sbQuickRow.appendChild(chip);
+  }
+
+  // entries
+  sbList.innerHTML = '';
+  if (data.error) {
+    sbList.innerHTML = '<div id="sb-empty">यह फ़ोल्डर नहीं खुल पाया</div>';
+    return;
+  }
+  if (!data.entries.length) {
+    sbList.innerHTML = '<div id="sb-empty">यह फ़ोल्डर खाली है</div>';
+    return;
+  }
+  for (const item of data.entries) {
+    const row = document.createElement('div');
+    row.className = 'fitem';
+    const ic = document.createElement('span');
+    ic.className = 'ic';
+    ic.textContent = item.isDir ? '📁' : sbExtIcon(item.name);
+    const nm = document.createElement('span');
+    nm.className = 'nm';
+    nm.textContent = item.name;
+    row.append(ic, nm);
+    if (!item.isDir) {
+      const sz = document.createElement('span');
+      sz.className = 'sz';
+      sz.textContent = sbFmtSize(item.size);
+      row.appendChild(sz);
+      row.addEventListener('click', () => {
+        if (!sbMultiple) {
+          sbSelected.clear();
+          sbSelected.add(item.path);
+        } else if (sbSelected.has(item.path)) {
+          sbSelected.delete(item.path);
+        } else {
+          sbSelected.add(item.path);
+        }
+        [...sbList.children].forEach((c) => c.classList.remove('sel'));
+        if (sbSelected.has(item.path)) row.classList.add('sel');
+        else if (!sbMultiple) row.classList.remove('sel');
+        if (sbMultiple) {
+          // re-mark all selected
+          [...sbList.children].forEach((c, i) => {
+            if (data.entries[i] && sbSelected.has(data.entries[i].path)) c.classList.add('sel');
+          });
+        }
+        updateChooseBtn();
+      });
+      row.addEventListener('dblclick', () => {
+        sbSelected.clear();
+        sbSelected.add(item.path);
+        doChoose();
+      });
+    } else {
+      row.addEventListener('click', () => sbLoad(item.path));
+    }
+    sbList.appendChild(row);
+  }
+}
+
+function updateChooseBtn() {
+  const n = sbSelected.size;
+  sbChoose.disabled = n === 0;
+  sbChoose.textContent = n > 1 ? `${n} फ़ाइलें अपलोड करें` : 'अपलोड करें';
+  sbCount.textContent = n ? n + ' चुनी गई' : '';
+}
+
+function doChoose() {
+  if (!sbSelected.size) return;
+  window.browser.uploadChoose([...sbSelected]);
+}
+
+sbUp.addEventListener('click', () => sbParent && sbLoad(sbParent));
+sbStar.addEventListener('click', async () => {
+  const isFav = sbFavs.some((f) => f.path === sbCurDir);
+  sbFavs = await window.browser.fsFavorite(isFav ? 'remove' : 'add', sbCurDir);
+  sbStar.textContent = sbFavs.some((f) => f.path === sbCurDir) ? '★' : '☆';
+  sbLoad(sbCurDir);
+});
+sbChoose.addEventListener('click', doChoose);
+document.getElementById('sb-cancel').addEventListener('click', () => window.browser.uploadCancel());
+
+window.browser.onUploadOpen((d) => {
+  sbMultiple = !!(d && d.multiple);
+  document.getElementById('sb-hint').textContent = sbMultiple
+    ? 'एक या कई फ़ाइलें चुनें, फिर "अपलोड करें" दबाएँ'
+    : 'फ़ोल्डर खोलें, फ़ाइल चुनें, फिर "अपलोड करें" दबाएँ';
+  sidebar.classList.add('open');
+  positionSidebar();
+  sbLoad('');
+});
+window.browser.onUploadClose(() => {
+  sidebar.classList.remove('open');
+  sbSelected.clear();
+});
+
+// ---------------------------------------------------------------------------
 // Voice: speak a command like "यूट्यूब खोलो" — routed through nav:go (which
 // parses commands). Uses the browser's built-in speech recognition.
 // ---------------------------------------------------------------------------
